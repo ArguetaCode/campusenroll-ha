@@ -12,6 +12,7 @@ services:
     volumes:
       - campusenroll_pg_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/init/02-create-student-course-databases.sql:/docker-entrypoint-initdb.d/02-create-student-course-databases.sql
     networks:
       - campusenroll-net
 
@@ -75,6 +76,40 @@ services:
       - campusenroll-postgres
       - campusenroll-redis
       - campusenroll-rabbitmq
+    networks:
+      - campusenroll-net
+
+  student-service:
+    build:
+      context: ../student-service
+      dockerfile: Dockerfile
+    container_name: campusenroll-student-service
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://campusenroll-postgres:5432/student_db
+      SPRING_DATASOURCE_USERNAME: campus
+      SPRING_DATASOURCE_PASSWORD: campus123
+    ports:
+      - "8081:8081"
+    depends_on:
+      - campusenroll-postgres
+    networks:
+      - campusenroll-net
+
+  course-service:
+    build:
+      context: ../course-service
+      dockerfile: Dockerfile
+    container_name: campusenroll-course-service
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://campusenroll-postgres:5432/course_db
+      SPRING_DATASOURCE_USERNAME: campus
+      SPRING_DATASOURCE_PASSWORD: campus123
+    ports:
+      - "8082:8082"
+    depends_on:
+      - campusenroll-postgres
     networks:
       - campusenroll-net
 
