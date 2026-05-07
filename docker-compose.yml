@@ -16,6 +16,24 @@ services:
     networks:
       - campusenroll-net
 
+  campusenroll-db-init:
+    image: postgres:16
+    container_name: campusenroll-db-init
+    restart: "no"
+    environment:
+      PGPASSWORD: campus123
+    command: >
+      sh -c "
+      until pg_isready -h campusenroll-postgres -U campus; do sleep 2; done;
+      psql -h campusenroll-postgres -U campus -d campusenroll -tc \"SELECT 1 FROM pg_database WHERE datname = 'student_db'\" | grep -q 1 || psql -h campusenroll-postgres -U campus -d campusenroll -c \"CREATE DATABASE student_db\";
+      psql -h campusenroll-postgres -U campus -d campusenroll -tc \"SELECT 1 FROM pg_database WHERE datname = 'course_db'\" | grep -q 1 || psql -h campusenroll-postgres -U campus -d campusenroll -c \"CREATE DATABASE course_db\";
+      psql -h campusenroll-postgres -U campus -d campusenroll -tc \"SELECT 1 FROM pg_database WHERE datname = 'enrollment_db'\" | grep -q 1 || psql -h campusenroll-postgres -U campus -d campusenroll -c \"CREATE DATABASE enrollment_db\";
+      "
+    depends_on:
+      - campusenroll-postgres
+    networks:
+      - campusenroll-net
+
   campusenroll-redis:
     image: redis:7
     container_name: campusenroll-redis
@@ -92,7 +110,8 @@ services:
     ports:
       - "8081:8081"
     depends_on:
-      - campusenroll-postgres
+      campusenroll-db-init:
+        condition: service_completed_successfully
     networks:
       - campusenroll-net
 
@@ -109,7 +128,41 @@ services:
     ports:
       - "8082:8082"
     depends_on:
-      - campusenroll-postgres
+      campusenroll-db-init:
+        condition: service_completed_successfully
+    networks:
+      - campusenroll-net
+
+  enrollment-service:
+    build:
+      context: ../enrollment-service/enrollment-service/enrollment-service
+      dockerfile: Dockerfile
+    container_name: campusenroll-enrollment-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8084
+      SPRING_DATASOURCE_URL: jdbc:postgresql://campusenroll-postgres:5432/enrollment_db
+      SPRING_DATASOURCE_USERNAME: campus
+      SPRING_DATASOURCE_PASSWORD: campus123
+      SPRING_RABBITMQ_HOST: campusenroll-rabbitmq
+      SPRING_RABBITMQ_USERNAME: campus
+      SPRING_RABBITMQ_PASSWORD: campus123
+      STUDENT_SERVICE_URL: http://student-service:8081
+      COURSE_SERVICE_URL: http://course-service:8082
+      BILLING_SERVICE_URL: http://billing-service:8083
+    ports:
+      - "8084:8084"
+    depends_on:
+      campusenroll-db-init:
+        condition: service_completed_successfully
+      campusenroll-rabbitmq:
+        condition: service_started
+      student-service:
+        condition: service_started
+      course-service:
+        condition: service_started
+      billing-service:
+        condition: service_started
     networks:
       - campusenroll-net
 
