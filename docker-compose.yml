@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: campus123
       POSTGRES_DB: campusenroll
     ports:
-      - "5432:5432"
+      - "55432:5432"
     volumes:
       - campusenroll_pg_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -54,6 +54,27 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    networks:
+      - campusenroll-net
+
+  billing-service:
+    build:
+      context: ../billing-service
+      dockerfile: Dockerfile
+    container_name: campusenroll-billing-service
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://campusenroll-postgres:5432/campusenroll
+      SPRING_DATASOURCE_USERNAME: campus
+      SPRING_DATASOURCE_PASSWORD: campus123
+      SPRING_RABBITMQ_HOST: campusenroll-rabbitmq
+      SPRING_REDIS_HOST: campusenroll-redis
+    ports:
+      - "8083:8083"
+    depends_on:
+      - campusenroll-postgres
+      - campusenroll-redis
+      - campusenroll-rabbitmq
     networks:
       - campusenroll-net
 
