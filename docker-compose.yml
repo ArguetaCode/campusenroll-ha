@@ -76,6 +76,16 @@ services:
     networks:
       - campusenroll-net
 
+  k6:
+    image: grafana/k6
+    container_name: campusenroll-k6
+    profiles:
+      - testing
+    volumes:
+      - ./tests:/scripts
+    networks:
+      - campusenroll-net
+
   billing-service:
     build:
       context: ../billing-service

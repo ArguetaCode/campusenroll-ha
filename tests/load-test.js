@@ -1,9 +1,11 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
 
+const baseUrl = __ENV.BASE_URL || "http://billing-service:8083";
+
 export const options = {
   vus: 10,
-  duration: "30s",
+  duration: "1m",
 };
 
 export default function () {
@@ -20,7 +22,7 @@ export default function () {
     },
   };
 
-  const response = http.post("http://localhost:8083/payments", payload, params);
+  const response = http.post(`${baseUrl}/payments`, payload, params);
 
   check(response, {
     "billing-service responded": (r) => r.status === 200,
