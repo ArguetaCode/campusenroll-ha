@@ -1,96 +1,61 @@
 # CampusEnroll HA
 
-CampusEnroll HA is a microservices architecture for university enrollment with limited seats, schedule validation, payment processing, asynchronous events, and observability.
+Arquitectura de microservicios para inscripcion universitaria con base de datos principal compartida.
 
-## Implemented Services
+## Decision de base de datos
 
-- `billing-service` (`8083`): payment registration, Redis cache status, RabbitMQ event publishing.
-- `notification-service` (`8084`): payment event consumption, notification persistence, idempotency, read status updates.
-- `student-service` (`8081`): basic student CRUD (work in progress).
-- `course-service` (`8082`): course/section/seat APIs (work in progress).
-- `enrollment-service` (`8085`): enrollment orchestration with external integrations (work in progress).
+Para este proyecto se adopta una sola base de datos PostgreSQL compartida:
+- Database: `campusenroll`
+- Schema: `campusenroll`
+- Host local: `127.0.0.1:55432`
+- Host Docker: `campusenroll-postgres:5432`
 
-## Infrastructure Components
+Todos los microservicios usan la misma conexion logica de base:
+`jdbc:postgresql://campusenroll-postgres:5432/campusenroll`
 
-- PostgreSQL: `localhost:55432` -> `campusenroll-postgres:5432`
-- Redis: `localhost:6379` -> `campusenroll-redis:6379`
-- RabbitMQ AMQP: `localhost:5672` -> `campusenroll-rabbitmq:5672`
-- RabbitMQ UI: `http://localhost:15672` (user `campus`, pass `campus123`)
-- Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000`
+No se usan `student_db`, `course_db` ni `enrollment_db`.
 
-## Docker Quick Start
+## Servicios y puertos
+
+- `student-service`: `8081` (profile `future`)
+- `course-service`: `8082` (profile `future`)
+- `billing-service`: `8083`
+- `notification-service`: `8084`
+- `enrollment-service`: `8085` (profile `future`)
+
+## Infraestructura
+
+- PostgreSQL: `55432:5432`
+- Redis: `6379:6379`
+- RabbitMQ: `5672:5672` y UI `15672`
+- Prometheus: `9090`
+- Grafana: `3000`
+
+## Migraciones (Flyway)
+
+Las migraciones SQL versionadas viven en `database/migrations` y Flyway es el administrador de esquema.
+
+Ejecucion recomendada en desarrollo local limpio:
 
 ```bash
 cd campusenroll-ha
 docker compose down -v
+docker compose up -d campusenroll-postgres
+docker compose --profile db-migration run --rm campusenroll-flyway
 docker compose up -d --build
-docker ps
+docker compose --profile future up -d --build student-service course-service
+# cuando enrollment este listo
+docker compose --profile future up -d --build enrollment-service
 ```
 
-## Microservice Ports
-
-- `student-service`: `8081`
-- `course-service`: `8082`
-- `billing-service`: `8083`
-- `notification-service`: `8084`
-- `enrollment-service`: `8085`
-
-## PostgreSQL Verification
+## Verificaciones
 
 ```bash
-docker exec -it campusenroll-postgres psql -U campus -d campusenroll -c "SELECT current_database(), current_user;"
-docker exec -it campusenroll-postgres psql -U campus -d campusenroll -c "SELECT * FROM campusenroll.payments ORDER BY created_at DESC LIMIT 5;"
-docker exec -it campusenroll-postgres psql -U campus -d campusenroll -c "SELECT * FROM campusenroll.notifications ORDER BY created_at DESC LIMIT 5;"
+docker exec -it campusenroll-postgres psql -U campus -d campusenroll -c "SELECT installed_rank, version, description, success FROM campusenroll.flyway_schema_history ORDER BY installed_rank;"
+docker exec -it campusenroll-postgres psql -U campus -d campusenroll -c "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema='campusenroll' ORDER BY table_name;"
+docker exec -it campusenroll-postgres psql -U campus -d campusenroll -c "SELECT datname FROM pg_database ORDER BY datname;"
 ```
 
-## Redis Verification
+## Notas de evolucion
 
-```bash
-docker exec -it campusenroll-redis redis-cli KEYS "billing:payment:*:status"
-docker exec -it campusenroll-redis redis-cli KEYS "notification:event:*"
-```
-
-## RabbitMQ Verification
-
-- Open: `http://localhost:15672`
-- Validate exchange: `campusenroll.payments`
-- Validate queue: `campusenroll.notifications.payments`
-- Validate bindings for routing keys:
-  - `payment.approved`
-  - `payment.failed`
-
-## Prometheus and Grafana
-
-- Prometheus targets page: `http://localhost:9090/targets`
-- Grafana login (default): `admin/admin` (change on first access)
-
-## End-to-End Flow (Billing -> RabbitMQ -> Notification)
-
-1. Client calls `POST /payments` on `billing-service`.
-2. `billing-service` stores payment in PostgreSQL (`campusenroll.payments`).
-3. `billing-service` caches state in Redis (`billing:payment:{paymentId}:status`).
-4. `billing-service` publishes event to exchange `campusenroll.payments` with:
-   - `payment.approved` or `payment.failed`
-5. `notification-service` consumes from queue `campusenroll.notifications.payments`.
-6. `notification-service` applies idempotency key `notification:event:{eventId}` in Redis.
-7. `notification-service` stores record in `campusenroll.notifications`.
-
-## k6 Load Test
-
-```bash
-# billing only
-k6 run tests/load-test.js
-
-# billing + optional notification read check
-INCLUDE_NOTIFICATION_CHECK=true k6 run tests/load-test.js
-```
-
-## Checkpoint Evidence Expectations
-
-- All core containers up (`postgres`, `redis`, `rabbitmq`, `prometheus`, `grafana`, `billing`, `notification`).
-- Health endpoints available for billing and notification.
-- Payment insertions visible in PostgreSQL.
-- Redis keys visible for billing status and notification idempotency.
-- RabbitMQ exchange, queue, and bindings visible.
-- Prometheus targets `UP` for billing and notification.
+Esta decision de base compartida simplifica integracion, auditoria, backups, monitoreo y DR para el checkpoint. En una siguiente fase se puede evolucionar hacia `database-per-service` o schemas separados por dominio.

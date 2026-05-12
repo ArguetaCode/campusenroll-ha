@@ -26,3 +26,9 @@ scrape_configs:
     metrics_path: "/actuator/prometheus"
     static_configs:
       - targets: ["course-service:8082"]
+
+  # enrollment-service is expected to be UP when the future profile is enabled.
+  - job_name: "enrollment-service"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["enrollment-service:8085"]

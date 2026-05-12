@@ -1,53 +1,17 @@
 # Next Implementation Plan
 
-Fecha de plan: 2026-05-08
+Fecha: 2026-05-11
 
-## Estado incremental completado
+## Completado en esta iteracion
 
-Se completo de forma incremental `student-service` y `course-service` sin reescritura ni cambios destructivos.
+1. Unificacion de base de datos compartida en todos los servicios.
+2. Eliminacion del enfoque de bases separadas en `docker-compose`.
+3. Flyway definido como mecanismo de migraciones versionadas.
+4. Documentacion de backup/restore, seguridad y replica alineada al nuevo enfoque.
 
-### student-service completado
+## Siguiente paso recomendado
 
-- `GET /health`
-- `GET /students/{id}/status`
-- `PATCH /students/{id}/status`
-- Actuator Prometheus habilitado (`/actuator/prometheus`)
-
-### course-service completado
-
-- `GET /health`
-- `GET /courses/{id}`
-- `GET /sections/{id}/schedule`
-- Actuator Prometheus habilitado (`/actuator/prometheus`)
-
-## Que sigue ahora (siguiente foco)
-
-1. `enrollment-service` hardening tecnico:
-   - corregir ruta real del proyecto para compose profile `future`
-   - alinear puerto `8085` en log/app/dockerfile
-   - agregar `GET /health`
-2. Implementar validacion de traslape horario en enrollment.
-3. Ejecutar pruebas E2E del flujo de inscripcion con pago y notificacion.
-
-## Riesgos tecnicos vigentes
-
-- Estructura anidada y package con underscore en enrollment.
-- Desalineacion de contratos HTTP finales entre rutas legacy `/api` y rutas planas.
-
-## Comandos de prueba
-
-```bash
-cd D:/Proyectos/proyectos_propios/proyecto_BD/student-service
-mvn clean compile
-
-cd D:/Proyectos/proyectos_propios/proyecto_BD/course-service
-mvn clean compile
-```
-
-```bash
-cd D:/Proyectos/proyectos_propios/proyecto_BD/campusenroll-ha
-docker compose up -d --build
-
-# activar servicios pendientes
-# docker compose --profile future up -d --build student-service course-service
-```
+1. Ejecutar corrida limpia local (`down -v`, `postgres`, `flyway`, servicios).
+2. Validar arranque de `student`, `course`, `enrollment` con profile `future`.
+3. Validar constraints `NOT VALID` con estrategia gradual de limpieza de datos.
+4. Preparar cambio controlado de `ddl-auto=update` a `ddl-auto=validate` en staging.
