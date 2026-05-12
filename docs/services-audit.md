@@ -1,27 +1,45 @@
 # Services Audit
 
-Fecha de auditoria: 2026-05-11
+Fecha de auditoria: 2026-05-12
 
 ## Resumen
 
-CampusEnroll HA queda alineado a una arquitectura de base compartida:
-- Database unica: `campusenroll`
-- Schema unico: `campusenroll`
-- Sin `student_db`, `course_db`, `enrollment_db`
+CampusEnroll HA opera con base compartida unica:
+- Database: `campusenroll`
+- Schema: `campusenroll`
 
-## Infraestructura y perfiles
+Todos los servicios usan la misma base; no se usan `student_db`, `course_db` ni `enrollment_db`.
 
-- Servicios base: `postgres`, `redis`, `rabbitmq`, `prometheus`, `grafana`, `billing-service`, `notification-service`
-- Profile `future`: `student-service`, `course-service`, `enrollment-service`
-- Profile `db-migration`: `campusenroll-flyway`
+## Estado por servicio
 
-## Conectividad de datos
+- `student-service` (`8081`): activo, expone estado de estudiante.
+- `course-service` (`8082`): activo, expone secciones, horarios y reserva/confirmacion/liberacion de cupos.
+- `billing-service` (`8083`): activo, procesa pagos y publica eventos.
+- `notification-service` (`8084`): activo, consume eventos y persiste notificaciones.
+- `enrollment-service` (`8085`, profile `future`): hardening aplicado.
 
-Todos los microservicios en compose usan:
-- `SPRING_DATASOURCE_URL=jdbc:postgresql://campusenroll-postgres:5432/campusenroll`
+## Hardening aplicado en enrollment-service
 
-## Notas de estabilidad
+- Endpoint agregado: `GET /health`.
+- Se mantiene API existente:
+  - `POST /api/enrollments`
+  - `GET /api/enrollments/{id}`
+  - `GET /api/students/{studentId}/enrollments`
+  - `DELETE /api/enrollments/{id}`
+- Validacion obligatoria de estudiante activo (`GET /students/{id}/status`).
+- Validacion de existencia de seccion (`GET /sections/{id}`).
+- Validacion de inscripcion duplicada para `PENDING_PAYMENT` y `CONFIRMED`.
+- Validacion de traslape de horarios por `dayOfWeek/startTime/endTime`.
+- Flujo robusto de cupo+pago:
+  - reserva cupo
+  - crea `PENDING_PAYMENT`
+  - procesa pago
+  - confirma cupo y estado `CONFIRMED` si `APPROVED`
+  - libera cupo y estado `PAYMENT_FAILED` si `FAILED` o error de integracion
 
-- `billing-service` y `notification-service` se mantienen sin cambios funcionales de negocio.
-- `enrollment-service` mantiene su logica actual; se corrigio `build.context` a la ruta real del `pom.xml`.
-- `ddl-auto=update` se mantiene temporalmente para no romper arranque, con plan de cambio a `validate` documentado.
+## Observabilidad
+
+`monitoring/prometheus.yml` incluye target:
+- `enrollment-service:8085` con `metrics_path: /actuator/prometheus`.
+
+Nota: si profile `future` no esta activo, ese target aparecera DOWN.

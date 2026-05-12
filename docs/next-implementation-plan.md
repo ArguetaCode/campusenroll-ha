@@ -1,17 +1,20 @@
 # Next Implementation Plan
 
-Fecha: 2026-05-11
+Fecha: 2026-05-12
 
-## Completado en esta iteracion
+## Completado
 
-1. Unificacion de base de datos compartida en todos los servicios.
-2. Eliminacion del enfoque de bases separadas en `docker-compose`.
-3. Flyway definido como mecanismo de migraciones versionadas.
-4. Documentacion de backup/restore, seguridad y replica alineada al nuevo enfoque.
+1. Arquitectura consolidada en base unica `campusenroll`.
+2. Flyway como control de migraciones versionadas.
+3. Hardening funcional de `enrollment-service` en `8085`.
+4. Validacion de traslape, duplicado, estudiante activo y resiliencia en flujo de cupo/pago.
 
 ## Siguiente paso recomendado
 
-1. Ejecutar corrida limpia local (`down -v`, `postgres`, `flyway`, servicios).
-2. Validar arranque de `student`, `course`, `enrollment` con profile `future`.
-3. Validar constraints `NOT VALID` con estrategia gradual de limpieza de datos.
-4. Preparar cambio controlado de `ddl-auto=update` a `ddl-auto=validate` en staging.
+1. Ejecutar pruebas E2E desde Postman/Newman con profile `future` activo.
+2. Agregar pruebas automatizadas de integracion para escenarios:
+   - estudiante inactivo
+   - traslape de horario
+   - pago fallido y liberacion de cupo
+3. Preparar paso de `ddl-auto=update` a `ddl-auto=validate` en staging.
+4. Incorporar PgBouncer y politicas de retry/circuit-breaker como hardening de red.
