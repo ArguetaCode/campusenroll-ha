@@ -1,0 +1,17 @@
+# Database artifacts
+/database/backups/
+/database/tmp/
+
+# Build artifacts
+target/
+
+# Env files
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store

@@ -11,6 +11,7 @@ services:
       - "55432:5432"
     volumes:
       - campusenroll_pg_data:/var/lib/postgresql/data
+      # Base bootstrap only; versioned migrations live in ./database/migrations
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - ./database/init/02-create-student-course-databases.sql:/docker-entrypoint-initdb.d/02-create-student-course-databases.sql
     networks:
@@ -29,6 +30,25 @@ services:
       psql -h campusenroll-postgres -U campus -d campusenroll -tc \"SELECT 1 FROM pg_database WHERE datname = 'course_db'\" | grep -q 1 || psql -h campusenroll-postgres -U campus -d campusenroll -c \"CREATE DATABASE course_db\";
       psql -h campusenroll-postgres -U campus -d campusenroll -tc \"SELECT 1 FROM pg_database WHERE datname = 'enrollment_db'\" | grep -q 1 || psql -h campusenroll-postgres -U campus -d campusenroll -c \"CREATE DATABASE enrollment_db\";
       "
+    depends_on:
+      - campusenroll-postgres
+    networks:
+      - campusenroll-net
+
+  campusenroll-flyway:
+    image: flyway/flyway:10
+    container_name: campusenroll-flyway
+    profiles:
+      - db-migration
+    command:
+      - -url=jdbc:postgresql://campusenroll-postgres:5432/campusenroll
+      - -user=campus
+      - -password=campus123
+      - -schemas=campusenroll
+      - -connectRetries=30
+      - migrate
+    volumes:
+      - ./database/migrations:/flyway/sql:ro
     depends_on:
       - campusenroll-postgres
     networks:
@@ -97,7 +117,11 @@ services:
       SPRING_DATASOURCE_USERNAME: campus
       SPRING_DATASOURCE_PASSWORD: campus123
       SPRING_RABBITMQ_HOST: campusenroll-rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: campus
+      SPRING_RABBITMQ_PASSWORD: campus123
       SPRING_REDIS_HOST: campusenroll-redis
+      SPRING_REDIS_PORT: 6379
     ports:
       - "8083:8083"
     depends_on:
@@ -107,7 +131,34 @@ services:
     networks:
       - campusenroll-net
 
+  notification-service:
+    build:
+      context: ../notification
+      dockerfile: Dockerfile
+    container_name: campusenroll-notification-service
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://campusenroll-postgres:5432/campusenroll
+      SPRING_DATASOURCE_USERNAME: campus
+      SPRING_DATASOURCE_PASSWORD: campus123
+      SPRING_RABBITMQ_HOST: campusenroll-rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: campus
+      SPRING_RABBITMQ_PASSWORD: campus123
+      SPRING_REDIS_HOST: campusenroll-redis
+      SPRING_REDIS_PORT: 6379
+    ports:
+      - "8084:8084"
+    depends_on:
+      - campusenroll-postgres
+      - campusenroll-redis
+      - campusenroll-rabbitmq
+    networks:
+      - campusenroll-net
+
   student-service:
+    profiles:
+      - future
     build:
       context: ../student-service
       dockerfile: Dockerfile
@@ -126,6 +177,8 @@ services:
       - campusenroll-net
 
   course-service:
+    profiles:
+      - future
     build:
       context: ../course-service
       dockerfile: Dockerfile
@@ -144,24 +197,27 @@ services:
       - campusenroll-net
 
   enrollment-service:
+    profiles:
+      - future
     build:
-      context: ../enrollment-service/enrollment-service/enrollment-service
+      context: ../enrollment-service/enrollment-service
       dockerfile: Dockerfile
     container_name: campusenroll-enrollment-service
     restart: unless-stopped
     environment:
-      SERVER_PORT: 8084
+      SERVER_PORT: 8085
       SPRING_DATASOURCE_URL: jdbc:postgresql://campusenroll-postgres:5432/enrollment_db
       SPRING_DATASOURCE_USERNAME: campus
       SPRING_DATASOURCE_PASSWORD: campus123
       SPRING_RABBITMQ_HOST: campusenroll-rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: campus
       SPRING_RABBITMQ_PASSWORD: campus123
       STUDENT_SERVICE_URL: http://student-service:8081
       COURSE_SERVICE_URL: http://course-service:8082
       BILLING_SERVICE_URL: http://billing-service:8083
     ports:
-      - "8084:8084"
+      - "8085:8085"
     depends_on:
       campusenroll-db-init:
         condition: service_completed_successfully
