@@ -22,35 +22,50 @@ jobs:
         with:
           path: campusenroll-ha
 
+      - name: Validate private repo token
+        shell: bash
+        env:
+          CI_REPOS_TOKEN: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
+        run: |
+          if [ -z "$CI_REPOS_TOKEN" ]; then
+            echo "::error::Configure repository secret CAMPUSENROLL_CI_TOKEN with read access to the private sibling service repositories."
+            exit 1
+          fi
+
       - name: Checkout student-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/student-service
           path: student-service
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Checkout course-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/course-service
           path: course-service
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Checkout billing-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/billing-service
           path: billing-service
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Checkout notification-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/notification
           path: notification
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Checkout enrollment-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/enrollment-service
           path: enrollment-service
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Validate Docker Compose config
         working-directory: campusenroll-ha
@@ -87,35 +102,50 @@ jobs:
         with:
           path: campusenroll-ha
 
+      - name: Validate private repo token
+        shell: bash
+        env:
+          CI_REPOS_TOKEN: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
+        run: |
+          if [ -z "$CI_REPOS_TOKEN" ]; then
+            echo "::error::Configure repository secret CAMPUSENROLL_CI_TOKEN with read access to the private sibling service repositories."
+            exit 1
+          fi
+
       - name: Checkout student-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/student-service
           path: student-service
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Checkout course-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/course-service
           path: course-service
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Checkout billing-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/billing-service
           path: billing-service
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Checkout notification-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/notification
           path: notification
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Checkout enrollment-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/enrollment-service
           path: enrollment-service
+          token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
 
       - name: Validate Docker Compose config
         working-directory: campusenroll-ha

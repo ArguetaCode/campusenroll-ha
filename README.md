@@ -373,6 +373,7 @@ Workflow: `.github/workflows/campusenroll-ci.yml`
 - `Baseline Manual`: corre solo con `workflow_dispatch`.
   - Ejecuta `scripts/k6-gateway-ci.ps1 -TestProfile baseline`.
   - Publica `artifacts/k6/*.json` como artifact del job.
+- Requiere el secret `CAMPUSENROLL_CI_TOKEN` con permisos de lectura sobre los repos privados hermanos (`student-service`, `course-service`, `billing-service`, `notification`, `enrollment-service`).
 
 ## Ejecucion de un microservicio en otra computadora (LAN)
 
