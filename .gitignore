@@ -13,5 +13,8 @@ target/
 *.log
 logs/
 
+# k6 runtime artifacts
+/artifacts/k6/*.json
+
 # OS files
 .DS_Store*.class

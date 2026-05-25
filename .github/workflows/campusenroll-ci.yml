@@ -1,0 +1,136 @@
+name: CampusEnroll HA CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: campusenroll-ha-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke CI
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout campusenroll-ha
+        uses: actions/checkout@v4
+        with:
+          path: campusenroll-ha
+
+      - name: Checkout student-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/student-service
+          path: student-service
+
+      - name: Checkout course-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/course-service
+          path: course-service
+
+      - name: Checkout billing-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/billing-service
+          path: billing-service
+
+      - name: Checkout notification-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/notification
+          path: notification
+
+      - name: Checkout enrollment-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/enrollment-service
+          path: enrollment-service
+
+      - name: Validate Docker Compose config
+        working-directory: campusenroll-ha
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Run gateway smoke test
+        working-directory: campusenroll-ha
+        shell: pwsh
+        run: ./scripts/gateway-smoke-ci.ps1 -ComposeFile docker-compose.yml -ContainerWaitAttempts 40 -EndpointRetryAttempts 10
+
+      - name: Run k6 smoke profile
+        working-directory: campusenroll-ha
+        shell: pwsh
+        run: ./scripts/k6-gateway-ci.ps1 -ComposeFile docker-compose.yml -TestProfile smoke -SkipGatewayPrecheck
+
+      - name: Upload k6 JSON artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-smoke-json
+          path: campusenroll-ha/artifacts/k6/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  baseline:
+    name: Baseline Manual
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout campusenroll-ha
+        uses: actions/checkout@v4
+        with:
+          path: campusenroll-ha
+
+      - name: Checkout student-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/student-service
+          path: student-service
+
+      - name: Checkout course-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/course-service
+          path: course-service
+
+      - name: Checkout billing-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/billing-service
+          path: billing-service
+
+      - name: Checkout notification-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/notification
+          path: notification
+
+      - name: Checkout enrollment-service
+        uses: actions/checkout@v4
+        with:
+          repository: ArguetaCode/enrollment-service
+          path: enrollment-service
+
+      - name: Validate Docker Compose config
+        working-directory: campusenroll-ha
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Run k6 baseline profile
+        working-directory: campusenroll-ha
+        shell: pwsh
+        run: ./scripts/k6-gateway-ci.ps1 -ComposeFile docker-compose.yml -TestProfile baseline
+
+      - name: Upload k6 JSON artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-baseline-json
+          path: campusenroll-ha/artifacts/k6/*.json
+          if-no-files-found: warn
+          retention-days: 14
