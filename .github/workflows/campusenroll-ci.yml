@@ -9,12 +9,15 @@ concurrency:
   group: campusenroll-ha-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   smoke:
     name: Smoke CI
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout campusenroll-ha
@@ -70,6 +73,9 @@ jobs:
       - name: Validate Docker Compose config
         working-directory: campusenroll-ha
         run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Prepare k6 artifacts directory
+        run: mkdir -p campusenroll-ha/artifacts/k6
 
       - name: Run gateway smoke test
         working-directory: campusenroll-ha
@@ -94,7 +100,7 @@ jobs:
     name: Baseline Manual
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout campusenroll-ha
@@ -150,6 +156,9 @@ jobs:
       - name: Validate Docker Compose config
         working-directory: campusenroll-ha
         run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Prepare k6 artifacts directory
+        run: mkdir -p campusenroll-ha/artifacts/k6
 
       - name: Run k6 baseline profile
         working-directory: campusenroll-ha

@@ -54,22 +54,52 @@ services:
     networks:
       - campusenroll-net
 
+  campusenroll-redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: campusenroll-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://campusenroll-redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      campusenroll-redis:
+        condition: service_healthy
+    networks:
+      - campusenroll-net
+
   campusenroll-rabbitmq:
     image: rabbitmq:3-management
     container_name: campusenroll-rabbitmq
     restart: unless-stopped
+    command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"]
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-campus}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-campus123}
     ports:
       - "5672:5672"
       - "15672:15672"
+      - "15692:15692"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 10s
       retries: 10
       start_period: 20s
+    networks:
+      - campusenroll-net
+
+  campusenroll-postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: campusenroll-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${DB_USER:-campus}:${DB_PASSWORD:-campus123}@campusenroll-postgres:5432/${DB_NAME:-campusenroll}?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      campusenroll-postgres:
+        condition: service_healthy
     networks:
       - campusenroll-net
 
@@ -90,6 +120,9 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - campusenroll-net
 
@@ -103,21 +136,35 @@ services:
       - ./api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       student-service:
-        condition: service_started
+        condition: service_healthy
       course-service:
-        condition: service_started
+        condition: service_healthy
       billing-service:
-        condition: service_started
+        condition: service_healthy
       notification-service:
-        condition: service_started
+        condition: service_healthy
       enrollment-service:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "nginx -t || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
+    networks:
+      - campusenroll-net
+
+  campusenroll-nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4
+    container_name: campusenroll-nginx-exporter
+    restart: unless-stopped
+    command:
+      - -nginx.scrape-uri=http://campusenroll-api-gateway:8080/nginx_status
+    ports:
+      - "9113:9113"
+    depends_on:
+      campusenroll-api-gateway:
+        condition: service_healthy
     networks:
       - campusenroll-net
 

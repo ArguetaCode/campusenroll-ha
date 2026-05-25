@@ -16,7 +16,6 @@ scrape_configs:
     static_configs:
       - targets: ["notification-service:8084"]
 
-  # These targets are expected to be UP when the future profile is enabled.
   - job_name: "student-service"
     metrics_path: "/actuator/prometheus"
     static_configs:
@@ -27,8 +26,23 @@ scrape_configs:
     static_configs:
       - targets: ["course-service:8082"]
 
-  # enrollment-service is expected to be UP when the future profile is enabled.
   - job_name: "enrollment-service"
     metrics_path: "/actuator/prometheus"
     static_configs:
       - targets: ["enrollment-service:8085"]
+
+  - job_name: "rabbitmq"
+    static_configs:
+      - targets: ["campusenroll-rabbitmq:15692"]
+
+  - job_name: "redis"
+    static_configs:
+      - targets: ["campusenroll-redis-exporter:9121"]
+
+  - job_name: "postgresql"
+    static_configs:
+      - targets: ["campusenroll-postgres-exporter:9187"]
+
+  - job_name: "api-gateway"
+    static_configs:
+      - targets: ["campusenroll-nginx-exporter:9113"]
