@@ -2,8 +2,13 @@ name: CampusEnroll HA CI
 
 on:
   push:
+    paths:
+      - "**"
   pull_request:
+    paths:
+      - "**"
   workflow_dispatch:
+
 
 concurrency:
   group: campusenroll-ha-${{ github.workflow }}-${{ github.ref }}
@@ -14,10 +19,16 @@ permissions:
 
 jobs:
   smoke:
-    name: Smoke CI
-    if: github.event_name != 'workflow_dispatch'
+    name: Compose, Flyway, Gateway Smoke, k6 Smoke
     runs-on: ubuntu-latest
+
     timeout-minutes: 40
+    timeout-minutes: 35
+
+    defaults:
+      run:
+        working-directory: campusenroll-ha
+>>>>>>> 8648c7d (Update CampusEnroll HA project progress)
 
     steps:
       - name: Checkout campusenroll-ha
@@ -25,13 +36,13 @@ jobs:
         with:
           path: campusenroll-ha
 
-      - name: Validate private repo token
+      - name: Validate private repository token
         shell: bash
         env:
           CI_REPOS_TOKEN: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
         run: |
           if [ -z "$CI_REPOS_TOKEN" ]; then
-            echo "::error::Configure repository secret CAMPUSENROLL_CI_TOKEN with read access to the private sibling service repositories."
+            echo "::error::Missing CAMPUSENROLL_CI_TOKEN. Configure it with read access to student-service, course-service, billing-service, notification, and enrollment-service."
             exit 1
           fi
 
@@ -39,63 +50,78 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/student-service
-          path: student-service
           token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
+          path: student-service
 
       - name: Checkout course-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/course-service
-          path: course-service
           token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
+          path: course-service
 
       - name: Checkout billing-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/billing-service
-          path: billing-service
           token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
+          path: billing-service
 
-      - name: Checkout notification-service
+      - name: Checkout notification
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/notification
-          path: notification
           token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
+          path: notification
 
       - name: Checkout enrollment-service
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/enrollment-service
-          path: enrollment-service
           token: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
+          path: enrollment-service
 
-      - name: Validate Docker Compose config
-        working-directory: campusenroll-ha
-        run: docker compose -f docker-compose.yml config --quiet
+      - name: Show Docker versions
+        run: |
+          docker --version
+          docker compose version
 
+<<<<<<< HEAD
       - name: Prepare k6 artifacts directory
         run: mkdir -p campusenroll-ha/artifacts/k6
 
       - name: Run gateway smoke test
         working-directory: campusenroll-ha
+=======
+      - name: Validate Docker Compose
+        run: docker compose config
+
+      - name: Start infra safely
+>>>>>>> 8648c7d (Update CampusEnroll HA project progress)
         shell: pwsh
-        run: ./scripts/gateway-smoke-ci.ps1 -ComposeFile docker-compose.yml -ContainerWaitAttempts 40 -EndpointRetryAttempts 10
+        run: docker compose up -d campusenroll-postgres campusenroll-redis campusenroll-rabbitmq
+
+      - name: Run Flyway migrations
+        shell: pwsh
+        run: docker compose --profile db-migration run --rm campusenroll-flyway
+
+      - name: Run gateway smoke CI
+        shell: pwsh
+        run: ./scripts/gateway-smoke-ci.ps1 -SkipFlyway
 
       - name: Run k6 smoke profile
-        working-directory: campusenroll-ha
         shell: pwsh
-        run: ./scripts/k6-gateway-ci.ps1 -ComposeFile docker-compose.yml -TestProfile smoke -SkipGatewayPrecheck
+        run: ./scripts/k6-gateway-ci.ps1 -TestProfile smoke -SkipGatewayPrecheck
 
-      - name: Upload k6 JSON artifacts
+      - name: Upload k6 artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: k6-smoke-json
+          name: campusenroll-k6-smoke
           path: campusenroll-ha/artifacts/k6/*.json
-          if-no-files-found: warn
-          retention-days: 14
+          if-no-files-found: ignore
 
+<<<<<<< HEAD
   baseline:
     name: Baseline Manual
     if: github.event_name == 'workflow_dispatch'
@@ -166,10 +192,12 @@ jobs:
         run: ./scripts/k6-gateway-ci.ps1 -ComposeFile docker-compose.yml -TestProfile baseline
 
       - name: Upload k6 JSON artifacts
+=======
+      - name: Show container status
+>>>>>>> 8648c7d (Update CampusEnroll HA project progress)
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: k6-baseline-json
-          path: campusenroll-ha/artifacts/k6/*.json
-          if-no-files-found: warn
-          retention-days: 14
+        run: docker compose ps
+
+      - name: Stop containers without deleting volumes
+        if: always()
+        run: docker compose stop

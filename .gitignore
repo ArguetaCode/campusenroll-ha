@@ -1,6 +1,7 @@
 # Database artifacts
 /database/backups/
 /database/tmp/
+/database/postgres-ha-lab/backups/*.dump
 
 # Build artifacts
 target/
@@ -18,3 +19,5 @@ logs/
 
 # OS files
 .DS_Store*.class
+*.class
+.DS_Store

@@ -20,7 +20,7 @@ if ($containerExists) {
     $env:PGPASSWORD = $env:POSTGRES_PASSWORD
     docker exec -e PGPASSWORD=$env:POSTGRES_PASSWORD campusenroll-postgres pg_dump -U $env:POSTGRES_USER -d $env:POSTGRES_DB -n $schema -Fc > $outputFile
 } else {
-    Write-Host "[info] using network connection to $hostName:$port"
+    Write-Host "[info] using network connection to ${hostName}:${port}"
     $env:PGPASSWORD = $env:POSTGRES_PASSWORD
     pg_dump -h $hostName -p $port -U $env:POSTGRES_USER -d $env:POSTGRES_DB -n $schema -Fc -f $outputFile
 }

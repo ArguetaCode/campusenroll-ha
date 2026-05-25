@@ -1,0 +1,103 @@
+services:
+  postgres-primary-lab:
+    image: postgres:16
+    container_name: postgres-primary-lab
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_LAB_DB:-campusenroll_lab}
+      POSTGRES_USER: ${POSTGRES_LAB_USER:-campus_lab}
+      POSTGRES_PASSWORD: ${POSTGRES_LAB_PASSWORD:-campus_lab123}
+      POSTGRES_REPLICATION_USER: ${POSTGRES_LAB_REPLICATION_USER:-replicator_lab}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_LAB_REPLICATION_PASSWORD:-replicator_lab123}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "hot_standby=on"
+      - "-c"
+      - "listen_addresses=*"
+      - "-c"
+      - "password_encryption=scram-sha-256"
+    ports:
+      - "${POSTGRES_LAB_PRIMARY_PORT:-55433}:5432"
+    volumes:
+      - postgres_primary_lab_data:/var/lib/postgresql/data
+      - ./database/postgres-ha-lab/primary/init:/docker-entrypoint-initdb.d:ro
+      - postgres_primary_lab_wal_archive:/var/lib/postgresql/wal-archive
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=$$POSTGRES_PASSWORD pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - postgres-ha-lab-net
+
+  postgres-replica-lab:
+    image: postgres:16
+    container_name: postgres-replica-lab
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_LAB_DB:-campusenroll_lab}
+      POSTGRES_USER: ${POSTGRES_LAB_USER:-campus_lab}
+      POSTGRES_PASSWORD: ${POSTGRES_LAB_PASSWORD:-campus_lab123}
+      POSTGRES_REPLICATION_USER: ${POSTGRES_LAB_REPLICATION_USER:-replicator_lab}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_LAB_REPLICATION_PASSWORD:-replicator_lab123}
+      PGPASSWORD: ${POSTGRES_LAB_REPLICATION_PASSWORD:-replicator_lab123}
+    entrypoint:
+      - "bash"
+      - "-ec"
+      - |
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          echo "[replica-lab] waiting for primary"
+          until pg_isready -h postgres-primary-lab -p 5432 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"; do
+            sleep 2
+          done
+          echo "[replica-lab] bootstrapping with pg_basebackup"
+          rm -rf "$$PGDATA"/*
+          pg_basebackup \
+            -h postgres-primary-lab \
+            -p 5432 \
+            -D "$$PGDATA" \
+            -U "$$POSTGRES_REPLICATION_USER" \
+            -Fp \
+            -Xs \
+            -P \
+            -R
+          chmod 700 "$$PGDATA"
+        fi
+        exec docker-entrypoint.sh postgres -c hot_standby=on -c listen_addresses=*
+    ports:
+      - "${POSTGRES_LAB_REPLICA_PORT:-55434}:5432"
+    volumes:
+      - postgres_replica_lab_data:/var/lib/postgresql/data
+    depends_on:
+      postgres-primary-lab:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=$$POSTGRES_PASSWORD pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    networks:
+      - postgres-ha-lab-net
+
+volumes:
+  postgres_primary_lab_data:
+    name: campusenroll_postgres_primary_lab_data
+  postgres_replica_lab_data:
+    name: campusenroll_postgres_replica_lab_data
+  postgres_primary_lab_wal_archive:
+    name: campusenroll_postgres_primary_lab_wal_archive
+
+networks:
+  postgres-ha-lab-net:
+    name: campusenroll_postgres_ha_lab_net
+    driver: bridge

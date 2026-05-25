@@ -12,6 +12,7 @@ param(
     [switch]$SkipGatewayPrecheck,
     [string]$GatewayHostBaseUrl = "http://localhost:8080",
     [int]$ReadinessRetryAttempts = 12,
+    [string]$K6Script = "load-test.js",
     [string]$ArtifactsDir = "artifacts/k6"
 )
 
@@ -228,7 +229,9 @@ Write-Host "Compose file: $ComposeFile"
 Write-Host "Gateway URL:  $GatewayBaseUrl"
 Write-Host "Host URL:     $GatewayHostBaseUrl"
 Write-Host "Profile:      $TestProfile"
+Write-Host "Script:       $K6Script"
 Write-Host "Artifacts:    $ArtifactsDir"
+Write-Warning "k6 scripts create test data in the configured environment. Use only disposable/local/CI databases for smoke runs."
 
 if (-not (Test-Path $ComposeFile)) {
     throw "Compose file not found: $ComposeFile"
@@ -237,6 +240,10 @@ if (-not (Test-Path $ComposeFile)) {
 $normalizedArtifactsDir = $ArtifactsDir.Replace("\", "/").TrimEnd("/")
 if ($normalizedArtifactsDir -ne "artifacts/k6") {
     throw "ArtifactsDir must remain 'artifacts/k6' because docker-compose.yml mounts './artifacts/k6' into the k6 container."
+
+$hostScriptPath = Join-Path "tests" $K6Script
+if (-not (Test-Path -LiteralPath $hostScriptPath)) {
+    throw "k6 script not found: $hostScriptPath"
 }
 
 if (-not $SkipGatewayPrecheck) {
@@ -323,7 +330,7 @@ if ($IncludeNotificationCheck) {
     $runArgs += @("-e", "INCLUDE_NOTIFICATION_CHECK=true")
 }
 
-$runArgs += @("/scripts/load-test.js")
+$runArgs += @("/scripts/$K6Script")
 
 $k6RunSucceeded = $true
 $k6RunError = $null

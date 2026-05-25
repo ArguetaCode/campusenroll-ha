@@ -2,6 +2,18 @@
 
 Arquitectura de microservicios para inscripcion universitaria con base de datos principal compartida.
 
+## Estado honesto de HA
+
+El proyecto esta preparado para laboratorio local/LAN y failover manual simple, pero todavia no es alta disponibilidad real de produccion. PostgreSQL, Redis, RabbitMQ y el gateway siguen siendo instancias unicas por defecto.
+
+Documentos operativos nuevos:
+
+- `docs/operational-baseline.md`: baseline seguro, puertos, health checks, Flyway y comandos peligrosos.
+- `docs/lan-lab-runbook.md`: guia por nodos LAN sin Kubernetes ni Docker Swarm.
+- `docs/postgresql-ha-lab.md`: guia inicial de primaria/replica, streaming replication, WAL/PITR y promocion manual.
+- `docs/postgresql-ha-lab-post-promotion.md`: flujo para reconstruir el laboratorio despues de promover una replica.
+- `docs/database-backup-restore.md`: estrategia de backup/restore, retencion y restore drill.
+
 ## Decision de base de datos
 
 Para este proyecto se adopta una sola base de datos PostgreSQL compartida:
@@ -43,6 +55,8 @@ No se usan `student_db`, `course_db` ni `enrollment_db`.
 Las migraciones SQL versionadas viven en `database/migrations` y Flyway es el administrador de esquema.
 
 ## Flujo operativo (Fase 1)
+
+Comandos seguros: usar `up -d`, `run --rm` para Flyway/k6 y scripts `*-ci.ps1`. No usar `docker compose down -v` en entornos con datos.
 
 ### 1) Levantar solo infraestructura
 
@@ -356,6 +370,7 @@ Uso:
 cd campusenroll-ha
 powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke
 powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile baseline -K6Vus 25 -K6Duration 90s
+powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -K6Script enrollment-flow-smoke.js
 
 # fail controlado para validar pass/fail automatico de thresholds en CI
 powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -K6Vus 1 -K6Duration 5s -K6ThresholdChecksRate "rate>1"
@@ -370,10 +385,46 @@ Workflow: `.github/workflows/campusenroll-ci.yml`
   - Ejecuta `scripts/gateway-smoke-ci.ps1`.
   - Ejecuta `scripts/k6-gateway-ci.ps1 -TestProfile smoke`.
   - Publica `artifacts/k6/*.json` como artifact del job.
-- `Baseline Manual`: corre solo con `workflow_dispatch`.
-  - Ejecuta `scripts/k6-gateway-ci.ps1 -TestProfile baseline`.
-  - Publica `artifacts/k6/*.json` como artifact del job.
 - Requiere el secret `CAMPUSENROLL_CI_TOKEN` con permisos de lectura sobre los repos privados hermanos (`student-service`, `course-service`, `billing-service`, `notification`, `enrollment-service`).
+- Si falta `CAMPUSENROLL_CI_TOKEN`, el workflow falla al inicio con un error claro antes de intentar clonar repos privados.
+
+Nota local: el workflow vive en `.github/workflows/campusenroll-ci.yml` dentro del repo `campusenroll-ha`. Usa `docker compose config`, `gateway-smoke-ci.ps1` y k6 `smoke`. No usa `docker compose down -v`; al final solo detiene contenedores con `docker compose stop`.
+
+## Smoke tests seguros
+
+- `scripts/gateway-smoke-ci.ps1`: recomendado para CI y demos seguras. No borra volumenes.
+- `scripts/gateway-smoke.ps1`: recomendado para ejecucion local manual. Ahora tambien es seguro por defecto y no borra volumenes.
+- `scripts/gateway-smoke.ps1 -AllowDestructiveCleanup`: solo para reset local descartable; ejecuta `down -v` y borra datos.
+
+## k6 actual y prueba de flujo completo
+
+`tests/load-test.js` sigue siendo la prueba principal de CI:
+
+- Perfil `smoke`: 5 VUs por 20s.
+- Cubre creacion de pagos via gateway.
+- Puede consultar notificaciones si `INCLUDE_NOTIFICATION_CHECK=true`.
+- No cubre por si sola el flujo completo de estudiante, curso, seccion, inscripcion, pago y notificacion.
+
+Se agrega `tests/enrollment-flow-smoke.js` como smoke pequeno de flujo completo:
+
+- Crea estudiante.
+- Crea curso.
+- Crea seccion con horario.
+- Crea inscripcion con pago aprobado.
+- Consulta notificaciones del estudiante.
+
+Uso seguro:
+
+```powershell
+docker compose up -d --build
+docker compose --profile testing run --rm -e GATEWAY_BASE_URL=http://campusenroll-api-gateway:8080 k6 run /scripts/enrollment-flow-smoke.js
+```
+
+O con el runner de CI:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -K6Script enrollment-flow-smoke.js
+```
 
 ## Ejecucion de un microservicio en otra computadora (LAN)
 

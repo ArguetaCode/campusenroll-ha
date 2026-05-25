@@ -1,5 +1,6 @@
 param(
     [switch]$SkipCleanup,
+    [switch]$AllowDestructiveCleanup,
     [string]$ComposeFile = "docker-compose.yml",
     [string]$GatewayBaseUrl = "http://localhost:8080"
 )
@@ -70,11 +71,16 @@ if (-not (Test-Path $ComposeFile)) {
     throw "Compose file not found: $ComposeFile"
 }
 
-if (-not $SkipCleanup) {
-    Write-Step "Cleanup previous stack (down -v)"
+if ($AllowDestructiveCleanup) {
+    Write-Step "Destructive cleanup requested explicitly (down -v)"
+    Write-Warning "This deletes Docker volumes, including PostgreSQL data. Use only in disposable local environments."
     Invoke-Compose -ComposeArgs @("down", "-v")
 } else {
-    Write-Step "Skipping cleanup because -SkipCleanup was provided"
+    if ($SkipCleanup) {
+        Write-Step "Safe mode: -SkipCleanup accepted for backwards compatibility."
+    } else {
+        Write-Step "Safe mode: skipping destructive cleanup. Use -AllowDestructiveCleanup only for disposable local resets."
+    }
 }
 
 Write-Step "Start infrastructure (PostgreSQL, Redis, RabbitMQ)"

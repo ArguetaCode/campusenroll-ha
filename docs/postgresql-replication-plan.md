@@ -1,5 +1,9 @@
 # PostgreSQL Replication Plan - CampusEnroll HA
 
+Detailed lab runbook: `docs/postgresql-ha-lab.md`.
+
+Current status: a separated laboratory primary/replica setup exists in `docker-compose.postgres-ha-lab.yml`. It is not an implemented production HA setup.
+
 ## Topology
 - Primary: accepts all writes and authoritative transactions.
 - Read Replica: asynchronous replica for read-heavy queries and reporting.
@@ -21,11 +25,27 @@ Write to primary always:
 - Critical workflows should pin reads to primary after writes.
 
 ## Failover
-Manual failover (current recommendation):
+Manual failover (lab recommendation):
 1. Detect primary failure.
 2. Promote replica.
 3. Repoint application connection strings.
 4. Validate write path and replication health.
+
+Lab command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\database\scripts\postgres-ha-lab-promote-replica.ps1 -ConfirmPromoteLab
+```
+
+Promotion breaks the original lab topology. Rebuild the replica after promotion.
+
+Post-promotion recovery runbook:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\database\scripts\postgres-ha-lab-rebuild-replica-after-promotion.ps1 -ConfirmDestroyLab
+```
+
+See `docs/postgresql-ha-lab-post-promotion.md` for split-brain risks and recovery options.
 
 Automatic failover (future):
 - Evaluate Patroni + etcd/Consul.
@@ -46,3 +66,19 @@ Track at minimum:
 - failover alerts and promotion events
 
 Prometheus + Grafana should include replication dashboards and alert rules.
+
+## Application Integration Plan
+
+Current services should keep using the existing local database unless a specific lab test changes their environment manually.
+
+Future write connection variables for the lab primary:
+
+```env
+DB_HOST=<lab-primary-host>
+DB_PORT=55433
+DB_NAME=campusenroll_lab
+DB_USER=campus_lab
+DB_PASSWORD=campus_lab123
+```
+
+Do not point write services at `55434`; that is the replica and should reject writes while in recovery.
