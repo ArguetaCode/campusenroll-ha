@@ -82,8 +82,75 @@ jobs:
           docker --version
           docker compose version
 
+      - name: Static guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          conflict_start="$(printf '<%.0s' {1..7})"
+          conflict_middle="$(printf '=%.0s' {1..7})"
+          conflict_end="$(printf '>%.0s' {1..7})"
+
+          if grep -R -n -e "$conflict_start" -e "$conflict_middle" -e "$conflict_end" . --exclude-dir=.git; then
+            echo "::error::Git conflict markers found. Resolve conflicts before running CI."
+            exit 1
+          fi
+
+          if grep -R -n -E "baselineOnMigrate[[:space:]]*=[[:space:]]*true" . --exclude-dir=.git; then
+            echo "::error::baselineOnMigrate=true is not allowed in the current project phase."
+            exit 1
+          fi
+
+          destructive_compose_cleanup="docker[[:space:]]+compose[[:space:]]+down[[:space:]]+-v"
+          if grep -R -n -E "$destructive_compose_cleanup" .github scripts; then
+            echo "::error::Destructive Docker Compose volume cleanup is not allowed in CI or smoke scripts."
+            exit 1
+          fi
+
+          echo "Static guardrails passed."
+
       - name: Validate Docker Compose
-        run: docker compose config --quiet
+        run: |
+          docker compose config --quiet
+          docker compose --profile testing config --quiet
+
+      - name: Validate Nginx gateway config
+        shell: bash
+        run: |
+          docker run --rm \
+            --add-host student-service:127.0.0.1 \
+            --add-host course-service:127.0.0.1 \
+            --add-host billing-service:127.0.0.1 \
+            --add-host notification-service:127.0.0.1 \
+            --add-host enrollment-service:127.0.0.1 \
+            -v "$PWD/api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            nginx:1.27-alpine nginx -t
+
+      - name: Validate PowerShell scripts
+        shell: pwsh
+        run: |
+          $files = @()
+          $files += Get-ChildItem -Path scripts -Filter *.ps1 -File
+          $files += Get-ChildItem -Path database/scripts -Filter *.ps1 -File
+
+          foreach ($file in $files) {
+              $tokens = $null
+              $errors = $null
+              [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+
+              if ($errors.Count -gt 0) {
+                  Write-Host "::error file=$($file.FullName)::PowerShell parse failed"
+                  $errors | ForEach-Object { Write-Host "::error::$($_.Message)" }
+                  exit 1
+              }
+          }
+
+          Write-Host "PowerShell parse passed for $($files.Count) scripts."
+
+      - name: Validate k6 JavaScript syntax
+        run: |
+          node --check tests/load-test.js
+          node --check tests/enrollment-flow-smoke.js
 
       - name: Prepare k6 artifacts directory
         run: mkdir -p artifacts/k6
