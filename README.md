@@ -6,6 +6,24 @@ Arquitectura de microservicios para inscripcion universitaria con base de datos 
 
 El proyecto esta preparado para laboratorio local/LAN y failover manual simple, pero todavia no es alta disponibilidad real de produccion. PostgreSQL, Redis, RabbitMQ y el gateway siguen siendo instancias unicas por defecto.
 
+## Estado actual del proyecto
+
+Si existe actualmente:
+
+- Microservicios Spring Boot funcionales para estudiantes, cursos, inscripciones, pagos y notificaciones.
+- Docker Compose local con PostgreSQL, Redis, RabbitMQ, Nginx gateway, Prometheus, Grafana y k6.
+- Migraciones Flyway versionadas.
+- CI seguro con smoke tests y k6 smoke pequeno.
+- Scripts de backup/restore y PostgreSQL HA Lab con advertencias y confirmaciones explicitas.
+
+Todavia no existe:
+
+- Alta disponibilidad real de produccion.
+- Kubernetes, Docker Swarm, Patroni o failover automatico.
+- Performance testing real o pruebas de 50,000 peticiones.
+- Separacion database-per-service.
+- Hardening productivo de secretos, TLS, monitoreo y alertas.
+
 Documentos operativos nuevos:
 
 - `docs/operational-baseline.md`: baseline seguro, puertos, health checks, Flyway y comandos peligrosos.
@@ -49,10 +67,19 @@ No se usan `student_db`, `course_db` ni `enrollment_db`.
 - `depends_on` usa `condition: service_healthy` para evitar llamadas tempranas.
 - `k6` depende del `campusenroll-api-gateway` saludable antes de iniciar.
 - `billing-service` y otros servicios reducen logging SQL por defecto para evitar saturacion de stdout.
+- En la fase actual, k6 se usa solo como smoke funcional pequeno. No representa una validacion de performance.
 
 ## Migraciones (Flyway)
 
 Las migraciones SQL versionadas viven en `database/migrations` y Flyway es el administrador de esquema.
+
+## Flyway Local Volume Note
+
+Si Flyway falla con `Found non-empty schema(s) "campusenroll" but no schema history table`, normalmente existe un volumen PostgreSQL local creado antes de que Flyway administrara el esquema.
+
+Este caso no indica por si solo un fallo del gateway ni de Docker Compose: el stack puede estar saludable, pero Flyway se detiene porque encuentra tablas existentes sin `campusenroll.flyway_schema_history`.
+
+En CI con volumenes limpios no deberia ocurrir. Para tener un entorno local completamente gestionado por Flyway, la salida limpia es recrear manualmente el volumen PostgreSQL local despues de confirmar que no hay datos que se deban conservar. No se habilita `baselineOnMigrate` automaticamente para no ocultar drift real del esquema.
 
 ## Flujo operativo (Fase 1)
 
@@ -220,43 +247,14 @@ curl http://<IP-A>:8085/actuator/health
 curl http://<IP-A>:8085/actuator/prometheus
 ```
 
-## Base para API Gateway / Reverse Proxy (sin implementacion)
-
-En esta fase no se implementa gateway, pero se deja preparada la base:
-
-- Servicios ya exponen `health` y `prometheus`.
-- URLs internas de `enrollment-service` son configurables por variables (`*_SERVICE_URL`).
-- Puertos y contratos estan estables para enrutar trafico externo.
-
-Propuesta de entrada unica para siguiente fase:
-
-- `api.campusenroll.lan` (DNS interno o entrada en `hosts`).
-- Ruteo sugerido:
-  - `/students/**` -> `student-service`
-  - `/courses/**` -> `course-service`
-  - `/payments/**` -> `billing-service`
-  - `/notifications/**` -> `notification-service`
-  - `/api/enrollments/**` -> `enrollment-service`
-- Capacidades objetivo del gateway/reverse proxy:
-  - TLS terminacion
-  - CORS centralizado
-  - Rate limiting basico
-  - Request logging y trazabilidad por `X-Request-ID`
-  - Timeouts y manejo de errores consistente
-
-Pendientes para activar gateway en siguiente fase:
-
-- Definir tecnologia (Spring Cloud Gateway o Nginx/Traefik).
-- Definir estrategia de autenticacion/autorizacion de borde.
-- Definir politicas de rate limit por cliente.
-
-## Fase 3 - Primera capa de entrada con Nginx
+## API Gateway local con Nginx
 
 Se agrego un reverse proxy Nginx como punto unico de entrada en `:8080`.
 
 - Servicio Compose: `campusenroll-api-gateway`
 - Configuracion: `api-gateway/nginx.conf`
 - Health del gateway: `GET /health`
+- Health por upstream: `GET /health/<service>`
 
 ### Flujo de entrada
 
@@ -302,12 +300,34 @@ SPRING_JPA_HIBERNATE_DDL_AUTO=update
 ## Verificaciones
 
 ```bash
+docker compose config --quiet
 docker exec -it campusenroll-postgres psql -U campus -d campusenroll -c "SELECT installed_rank, version, description, success FROM campusenroll.flyway_schema_history ORDER BY installed_rank;"
 docker exec -it campusenroll-postgres psql -U campus -d campusenroll -c "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema='campusenroll' ORDER BY table_name;"
 docker exec -it campusenroll-postgres psql -U campus -d campusenroll -c "SELECT datname FROM pg_database ORDER BY datname;"
 ```
 
-## Prueba k6 (recomendado)
+## Checklist de demo segura
+
+Desde `campusenroll-ha`:
+
+```powershell
+docker compose config --quiet
+docker compose up -d campusenroll-postgres campusenroll-redis campusenroll-rabbitmq
+docker compose --profile db-migration run --rm campusenroll-flyway
+docker compose up -d --build
+powershell -ExecutionPolicy Bypass -File .\scripts\gateway-smoke-ci.ps1 -SkipFlyway
+powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -SkipGatewayPrecheck
+docker compose ps
+```
+
+Reglas para demo:
+
+- No usar `docker compose down -v`.
+- No borrar volumenes.
+- No ejecutar perfiles k6 distintos de `smoke`.
+- Usar PostgreSQL HA Lab solo si la demo es especificamente sobre replicacion de laboratorio.
+
+## Prueba k6 smoke directa
 
 ```bash
 cd campusenroll-ha
@@ -316,6 +336,8 @@ docker compose --profile db-migration run --rm campusenroll-flyway
 docker compose up -d --build
 docker compose --profile testing run --rm -e GATEWAY_BASE_URL=http://campusenroll-api-gateway:8080 k6 run /scripts/load-test.js
 ```
+
+Este comando crea pagos de prueba y mantiene el perfil smoke fijo. Para CI y demos repetibles se recomienda usar `scripts/k6-gateway-ci.ps1`.
 
 ## k6 smoke seguro (gateway)
 
@@ -375,14 +397,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfil
 Workflow: `.github/workflows/campusenroll-ci.yml`
 
 - `Smoke CI`: corre automaticamente en `push` y `pull_request`.
-  - Valida `docker compose config`.
+  - Valida `docker compose config --quiet`.
   - Ejecuta `scripts/gateway-smoke-ci.ps1`.
   - Ejecuta `scripts/k6-gateway-ci.ps1 -TestProfile smoke`.
   - Publica `artifacts/k6/*.json` como artifact del job.
 - Requiere el secret `CAMPUSENROLL_CI_TOKEN` con permisos de lectura sobre los repos privados hermanos (`student-service`, `course-service`, `billing-service`, `notification`, `enrollment-service`).
 - Si falta `CAMPUSENROLL_CI_TOKEN`, el workflow falla al inicio con un error claro antes de intentar clonar repos privados.
 
-Nota local: el workflow vive en `.github/workflows/campusenroll-ci.yml` dentro del repo `campusenroll-ha`. Usa `docker compose config`, `gateway-smoke-ci.ps1` y k6 `smoke`. No usa `docker compose down -v`; al final solo detiene contenedores con `docker compose stop`.
+Nota local: el workflow vive en `.github/workflows/campusenroll-ci.yml` dentro del repo `campusenroll-ha`. Usa `docker compose config --quiet`, `gateway-smoke-ci.ps1` y k6 `smoke`. No usa `docker compose down -v`; al final solo detiene contenedores con `docker compose stop`.
 
 ## Smoke tests seguros
 
@@ -420,6 +442,14 @@ O con el runner de k6 para una demo controlada:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -K6Script enrollment-flow-smoke.js
 ```
+
+## Limitaciones actuales
+
+- El stack local sigue dependiendo de instancias unicas de PostgreSQL, Redis, RabbitMQ y Nginx.
+- El PostgreSQL HA Lab esta aislado en `docker-compose.postgres-ha-lab.yml`; no reemplaza la base local ni prueba HA productiva.
+- Los smoke tests crean datos de prueba en la base configurada.
+- El CI valida arranque, migraciones, gateway y smoke k6; no valida carga masiva ni failover real.
+- Los secretos por defecto son de laboratorio y no deben usarse en produccion.
 
 ## Ejecucion de un microservicio en otra computadora (LAN)
 

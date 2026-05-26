@@ -23,7 +23,7 @@ Infrastructure services:
 - `campusenroll-flyway`: schema migration runner.
 - `campusenroll-prometheus`: metrics scraping.
 - `campusenroll-grafana`: dashboards.
-- `k6`: small smoke/load-test runner.
+- `k6`: small smoke runner only.
 
 ## Ports
 
@@ -47,7 +47,7 @@ Infrastructure services:
 From `campusenroll-ha`:
 
 ```powershell
-docker compose config
+docker compose config --quiet
 docker compose up -d campusenroll-postgres campusenroll-redis campusenroll-rabbitmq
 docker compose --profile db-migration run --rm campusenroll-flyway
 docker compose up -d --build
@@ -64,7 +64,7 @@ Recommended lab roles:
 - DB/infra node: PostgreSQL, Redis, RabbitMQ, Prometheus, Grafana.
 - Gateway node: Nginx gateway, pointing to reachable LAN service endpoints.
 - Microservice node: one or more Spring Boot services.
-- DB replica node: future PostgreSQL streaming replica.
+- DB replica node: optional PostgreSQL HA Lab experiment only, not production HA.
 
 ## Health Checks
 
@@ -120,7 +120,7 @@ docker exec campusenroll-postgres psql -U campus -d campusenroll -c "SELECT tabl
 Safe for local demo and LAN lab:
 
 ```powershell
-docker compose config
+docker compose config --quiet
 docker compose ps
 docker compose up -d
 docker compose up -d --build
@@ -141,13 +141,7 @@ docker volume rm campusenroll-ha_campusenroll_pg_data
 docker system prune --volumes
 ```
 
-`docker compose down -v` deletes named volumes and can erase the PostgreSQL database. The local `gateway-smoke.ps1` now skips destructive cleanup by default. The only way to request a volume-deleting reset is:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\gateway-smoke.ps1 -AllowDestructiveCleanup
-```
-
-Use that only for disposable local resets, never for LAN, staging, demos with data, or CI.
+`docker compose down -v` deletes named volumes and can erase the PostgreSQL database. `gateway-smoke.ps1 -AllowDestructiveCleanup` is disabled and fails with a clear message. Volume deletion is not part of the safe smoke workflow.
 
 ## Current HA Reality
 
@@ -159,3 +153,24 @@ Current state:
 - Failover is manual and documented, not automatic.
 
 This is readiness work for a LAN lab. It is not yet real production-grade high availability.
+
+## Demo Checklist
+
+Use this before a local demo:
+
+```powershell
+docker compose config --quiet
+docker compose up -d campusenroll-postgres campusenroll-redis campusenroll-rabbitmq
+docker compose --profile db-migration run --rm campusenroll-flyway
+docker compose up -d --build
+powershell -ExecutionPolicy Bypass -File .\scripts\gateway-smoke-ci.ps1 -SkipFlyway
+powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -SkipGatewayPrecheck
+docker compose ps
+```
+
+Expected scope:
+
+- Fast functional validation only.
+- k6 smoke only, no performance testing.
+- No volume deletion.
+- No Kubernetes, Docker Swarm, or production HA claims.

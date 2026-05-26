@@ -2,11 +2,13 @@
 
 Detailed lab runbook: `docs/postgresql-ha-lab.md`.
 
-Current status: a separated laboratory primary/replica setup exists in `docker-compose.postgres-ha-lab.yml`. It is not an implemented production HA setup.
+Current status: a separated laboratory primary/replica setup exists in `docker-compose.postgres-ha-lab.yml`. It is not an implemented production HA setup and is not wired into the default application stack.
 
-## Topology
+## Current Lab Topology
 - Primary: accepts all writes and authoritative transactions.
 - Read Replica: asynchronous replica for read-heavy queries and reporting.
+
+This topology is for technical learning and controlled validation only. Default CampusEnroll services continue using `campusenroll-postgres` unless an operator manually changes environment variables for a lab experiment.
 
 ## Read/Write Routing
 Read from replica (candidate use cases):
@@ -51,13 +53,13 @@ Automatic failover (future):
 - Evaluate Patroni + etcd/Consul.
 - Add fencing and split-brain safeguards.
 
-## PgBouncer
+## PgBouncer (Future Only)
 Use PgBouncer in front of PostgreSQL for:
 - connection pooling
 - reduced backend connection churn
 - improved throughput during bursts
 
-## Monitoring Replication
+## Monitoring Replication (Future Only)
 Track at minimum:
 - `pg_stat_replication` lag bytes/time
 - replica replay delay
@@ -65,7 +67,7 @@ Track at minimum:
 - replication slot health
 - failover alerts and promotion events
 
-Prometheus + Grafana should include replication dashboards and alert rules.
+Prometheus + Grafana do not currently prove PostgreSQL production HA. Replication dashboards and alert rules are future work.
 
 ## Application Integration Plan
 

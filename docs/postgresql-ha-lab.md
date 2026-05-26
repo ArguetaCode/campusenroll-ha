@@ -85,6 +85,8 @@ pg_basebackup -h postgres-primary-lab -p 5432 -D "$PGDATA" -U "$POSTGRES_REPLICA
 
 `-R` writes the standby configuration needed for PostgreSQL 16 to follow the primary.
 
+During bootstrap, the replica entrypoint clears only the replica lab `PGDATA` volume before `pg_basebackup`. This does not touch `campusenroll-postgres` or the default application database volume.
+
 ## Start the Lab
 
 ```powershell

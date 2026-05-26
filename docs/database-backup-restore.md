@@ -2,6 +2,8 @@
 
 Important: a backup that has not been restored successfully in a drill does not count as real recovery capability.
 
+Current scope: these scripts support lab/local validation and demos. They are not production backup automation.
+
 ## Variables
 Use environment variables instead of hardcoding secrets:
 - `POSTGRES_DB` (default `campusenroll`)
@@ -98,22 +100,22 @@ docker exec <restore-postgres> psql -U campus -d campusenroll -c "SELECT 'studen
 - Apply migrations only after backup is confirmed.
 - Keep rollback runbook documented.
 
-## Production Recommendations
+## Future Production Recommendations
 - Store backups encrypted at rest and in transit.
 - Replicate backups to a second region/account.
 - Protect backup retention with immutable storage policies where possible.
 
-## WAL Archiving
+## WAL Archiving (Future)
 - Enable WAL archiving in production to reduce RPO beyond daily dumps.
 - Store WAL files in durable object storage.
 - Monitor archive lag and failures.
 
-## Point-In-Time Recovery (PITR)
+## Point-In-Time Recovery (PITR, Future)
 - Combine periodic base backups + WAL archive.
 - Rebuild a new instance and replay WAL to target timestamp.
 - Document timeline selection and test PITR quarterly.
 
-## Read Replica
+## Read Replica (Future)
 - Use streaming replication for read workloads and DR readiness.
 - Keep writes strictly on primary.
 

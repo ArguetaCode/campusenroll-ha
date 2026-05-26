@@ -26,6 +26,29 @@ function Invoke-Compose {
     }
 }
 
+function Invoke-FlywayMigrations {
+    $composeArgs = @("--profile", "db-migration", "run", "--rm", "campusenroll-flyway")
+    $output = & docker compose -f $ComposeFile @composeArgs 2>&1
+    $exitCode = $LASTEXITCODE
+
+    if ($output) {
+        $output | ForEach-Object { Write-Host $_ }
+    }
+
+    if ($exitCode -ne 0) {
+        $outputText = ($output | ForEach-Object { "$_" }) -join "`n"
+        if ($outputText -match "Found non-empty schema\(s\)|schema history table|flyway_schema_history") {
+            Write-Host ""
+            Write-Host "[WARNING] Existing local database detected without Flyway history table." -ForegroundColor Yellow
+            Write-Host "[WARNING] This usually indicates a pre-Flyway local volume." -ForegroundColor Yellow
+            Write-Host "[WARNING] CI environments with clean volumes should not hit this issue." -ForegroundColor Yellow
+            Write-Host "[WARNING] Use a clean local PostgreSQL volume if Flyway-managed migrations are required." -ForegroundColor Yellow
+        }
+
+        throw "docker compose failed: $($composeArgs -join ' ')"
+    }
+}
+
 function Write-ComposeDiagnostics {
     Write-Host ""
     Write-Host "Diagnostics timestamp: $(Get-Date -Format o)" -ForegroundColor Yellow
@@ -319,7 +342,7 @@ Invoke-Compose -ComposeArgs @("up", "-d", "campusenroll-postgres", "campusenroll
 
 if (-not $SkipFlyway) {
     Write-Step "Run Flyway migrations (idempotent)"
-    Invoke-Compose -ComposeArgs @("--profile", "db-migration", "run", "--rm", "campusenroll-flyway")
+    Invoke-FlywayMigrations
 } else {
     Write-Step "Skipping Flyway because -SkipFlyway was provided"
 }

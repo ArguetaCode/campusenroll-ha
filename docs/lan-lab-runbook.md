@@ -1,6 +1,6 @@
 # CampusEnroll-HA LAN Lab Runbook
 
-This guide prepares a LAN lab without Kubernetes or Docker Swarm. It keeps the existing local Docker Compose workflow intact.
+This guide prepares a small LAN lab without Kubernetes or Docker Swarm. It keeps the existing local Docker Compose workflow intact and does not claim production HA.
 
 ## Target Roles
 
@@ -10,7 +10,7 @@ This guide prepares a LAN lab without Kubernetes or Docker Swarm. It keeps the e
 | Gateway | Nginx API gateway | `192.168.1.20` |
 | Microservices A | student/course services | `192.168.1.30` |
 | Microservices B | billing/notification/enrollment services | `192.168.1.31` |
-| DB replica | PostgreSQL streaming replica, future DR target | `192.168.1.11` |
+| DB replica | Optional PostgreSQL HA Lab experiment, not production DR | `192.168.1.11` |
 
 Use static IPs or DHCP reservations. Validate firewall rules before testing application behavior.
 
@@ -106,12 +106,14 @@ If a microservice node fails:
 - Nginx OSS does not actively health-check upstreams. It marks failures during request handling using `max_fails`, `fail_timeout`, and `proxy_next_upstream`.
 - The default Compose file uses fixed `container_name` values and fixed ports, which is fine for one instance per host but not for same-host horizontal scaling.
 - PostgreSQL, Redis, RabbitMQ, and gateway are still single-instance unless separately deployed with HA patterns.
+- PostgreSQL HA Lab is isolated from the default Compose database and should not be mixed into a normal demo unless the demo is specifically about lab replication.
 
 ## Validation Checklist
 
-- `docker compose config` passes on each node.
+- `docker compose config --quiet` passes on each node.
 - LAN connectivity passes with `Test-NetConnection <ip> -Port <port>`.
 - Gateway `/health/*` endpoints return service health.
 - Flyway history shows all expected migrations as successful.
-- Smoke test passes from the gateway node.
+- Smoke test passes from the gateway node with `scripts/gateway-smoke-ci.ps1`.
+- k6 uses only `smoke`; no performance or 50,000-request run is part of this lab.
 - A backup is created and restored into an isolated PostgreSQL instance before any failover exercise is considered successful.
