@@ -1,7 +1,6 @@
 param(
     [string]$ComposeFile = "docker-compose.yml",
     [string]$GatewayBaseUrl = "http://campusenroll-api-gateway:8080",
-    [ValidateSet("smoke", "baseline", "volume50k")]
     [string]$TestProfile = "smoke",
     [string]$K6Vus = "",
     [string]$K6Duration = "",
@@ -231,7 +230,32 @@ Write-Host "Host URL:     $GatewayHostBaseUrl"
 Write-Host "Profile:      $TestProfile"
 Write-Host "Script:       $K6Script"
 Write-Host "Artifacts:    $ArtifactsDir"
-Write-Warning "k6 scripts create test data in the configured environment. Use only disposable/local/CI databases for smoke runs."
+Write-Warning "k6 smoke scripts create test data in the configured environment. Use only disposable/local/CI databases."
+Write-Host "Allowed k6 profile in current project phase: smoke" -ForegroundColor Yellow
+
+$normalizedTestProfile = $TestProfile.ToLowerInvariant()
+if ($normalizedTestProfile -ne "smoke") {
+    throw "[ERROR] $TestProfile profile is disabled in current project phase. Only 'smoke' is allowed for CI/demo."
+}
+
+if ($K6Vus -ne "") {
+    throw "[ERROR] K6_VUS override is disabled in current project phase. Smoke is fixed at 5 VUs."
+}
+
+if ($K6Duration -ne "") {
+    throw "[ERROR] K6_DURATION override is disabled in current project phase. Smoke is fixed at 20s."
+}
+
+$allowedK6Scripts = @("load-test.js", "enrollment-flow-smoke.js")
+if ($allowedK6Scripts -notcontains $K6Script) {
+    throw "[ERROR] k6 script '$K6Script' is not allowed in CI/demo smoke mode."
+}
+
+if ($K6Script -eq "enrollment-flow-smoke.js") {
+    Write-Warning "enrollment-flow-smoke.js creates real test rows for student, course, section, enrollment, payment, and notification validation."
+} else {
+    Write-Warning "load-test.js creates real test payment rows for smoke validation."
+}
 
 if (-not (Test-Path $ComposeFile)) {
     throw "Compose file not found: $ComposeFile"
@@ -240,6 +264,7 @@ if (-not (Test-Path $ComposeFile)) {
 $normalizedArtifactsDir = $ArtifactsDir.Replace("\", "/").TrimEnd("/")
 if ($normalizedArtifactsDir -ne "artifacts/k6") {
     throw "ArtifactsDir must remain 'artifacts/k6' because docker-compose.yml mounts './artifacts/k6' into the k6 container."
+}
 
 $hostScriptPath = Join-Path "tests" $K6Script
 if (-not (Test-Path -LiteralPath $hostScriptPath)) {
@@ -299,20 +324,12 @@ if ($IsLinux) {
 
 $runArgs += @(
     "-e", "GATEWAY_BASE_URL=$GatewayBaseUrl",
-    "-e", "TEST_PROFILE=$TestProfile",
-    "-e", "K6_IDEMPOTENCY_KEY_PREFIX=k6-$TestProfile-$runId",
+    "-e", "TEST_PROFILE=$normalizedTestProfile",
+    "-e", "K6_IDEMPOTENCY_KEY_PREFIX=k6-$normalizedTestProfile-$runId",
     "k6", "run",
     "--summary-export", $summaryFileInContainer,
     "--out", "json=$resultsFileInContainer"
 )
-
-if ($K6Vus -ne "") {
-    $runArgs += @("-e", "K6_VUS=$K6Vus")
-}
-
-if ($K6Duration -ne "") {
-    $runArgs += @("-e", "K6_DURATION=$K6Duration")
-}
 
 if ($K6ThresholdFailureRate -ne "") {
     $runArgs += @("-e", "K6_THRESHOLD_FAILURE_RATE=$K6ThresholdFailureRate")

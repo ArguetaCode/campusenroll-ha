@@ -7,13 +7,31 @@ const gatewayBaseUrl = __ENV.GATEWAY_BASE_URL || "http://localhost:8080";
 const iterations = Number(__ENV.K6_FLOW_ITERATIONS || "1");
 const vus = Number(__ENV.K6_FLOW_VUS || "1");
 
+if (__ENV.TEST_PROFILE && __ENV.TEST_PROFILE.toLowerCase() !== "smoke") {
+  throw new Error(`[ERROR] ${__ENV.TEST_PROFILE} profile is disabled in current project phase. Only smoke is allowed.`);
+}
+
+if (!Number.isFinite(vus) || vus !== 1) {
+  throw new Error("[ERROR] K6_FLOW_VUS must remain 1. enrollment-flow-smoke.js is demo/local smoke only.");
+}
+
+if (!Number.isFinite(iterations) || iterations !== 1) {
+  throw new Error("[ERROR] K6_FLOW_ITERATIONS must remain 1. enrollment-flow-smoke.js creates real test data.");
+}
+
+if (__ENV.K6_FLOW_MAX_DURATION) {
+  throw new Error("[ERROR] K6_FLOW_MAX_DURATION override is disabled in current project phase. Smoke is fixed at 45s.");
+}
+
+console.warn("[WARN] enrollment-flow-smoke.js is demo/local smoke and creates real test rows for student, course, section, enrollment, payment, and notification validation.");
+
 export const options = {
   scenarios: {
     enrollment_flow_smoke: {
       executor: "shared-iterations",
-      vus: Number.isFinite(vus) && vus > 0 ? vus : 1,
-      iterations: Number.isFinite(iterations) && iterations > 0 ? iterations : 1,
-      maxDuration: __ENV.K6_FLOW_MAX_DURATION || "45s",
+      vus: 1,
+      iterations: 1,
+      maxDuration: "45s",
     },
   },
   thresholds: {

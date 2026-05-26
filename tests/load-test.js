@@ -8,49 +8,42 @@ const includeNotificationCheck = (__ENV.INCLUDE_NOTIFICATION_CHECK || "false").t
 const testProfile = (__ENV.TEST_PROFILE || "smoke").toLowerCase();
 const idempotencyKeyPrefix = __ENV.K6_IDEMPOTENCY_KEY_PREFIX || `k6-${testProfile}`;
 
+if (testProfile !== "smoke") {
+  throw new Error(`[ERROR] ${testProfile} profile is disabled in current project phase. Only smoke is allowed.`);
+}
+
+if (__ENV.K6_VUS) {
+  throw new Error("[ERROR] K6_VUS override is disabled in current project phase. Smoke is fixed at 5 VUs.");
+}
+
+if (__ENV.K6_DURATION) {
+  throw new Error("[ERROR] K6_DURATION override is disabled in current project phase. Smoke is fixed at 20s.");
+}
+
+if (__ENV.K6_SLEEP_SECONDS) {
+  throw new Error("[ERROR] K6_SLEEP_SECONDS override is disabled to avoid accidental high-throughput smoke runs.");
+}
+
+console.warn("[WARN] load-test.js is a small smoke test and creates real test payment rows.");
+
 const profileOptions = {
   smoke: {
     vus: 5,
     duration: "20s",
   },
-  baseline: {
-    vus: 20,
-    duration: "60s",
-  },
-  volume50k: {
-    vus: 50,
-    iterations: 50000,
-    maxDuration: "15m",
-    sleepSeconds: 0,
-  },
 };
 
-const selectedProfile = profileOptions[testProfile] || profileOptions.smoke;
-const vusOverride = __ENV.K6_VUS ? Number(__ENV.K6_VUS) : null;
-const durationOverride = __ENV.K6_DURATION || null;
-const configuredVus = Number.isFinite(vusOverride) && vusOverride > 0 ? vusOverride : selectedProfile.vus;
-const sleepSecondsOverride = __ENV.K6_SLEEP_SECONDS ? Number(__ENV.K6_SLEEP_SECONDS) : null;
-const iterationSleepSeconds = Number.isFinite(sleepSecondsOverride) && sleepSecondsOverride >= 0
-  ? sleepSecondsOverride
-  : (selectedProfile.sleepSeconds ?? 1);
+const selectedProfile = profileOptions.smoke;
+const configuredVus = selectedProfile.vus;
+const iterationSleepSeconds = 1;
 const profileThresholds = {
   smoke: {
     failureRate: "rate<0.01",
     p95Duration: "p(95)<1200",
     checksRate: "rate>0.99",
   },
-  baseline: {
-    failureRate: "rate<0.05",
-    p95Duration: "p(95)<2500",
-    checksRate: "rate>0.95",
-  },
-  volume50k: {
-    failureRate: "rate<0.01",
-    p95Duration: "p(95)<3000",
-    checksRate: "rate>0.99",
-  },
 };
-const selectedThresholds = profileThresholds[testProfile] || profileThresholds.smoke;
+const selectedThresholds = profileThresholds.smoke;
 const failureRateThreshold = __ENV.K6_THRESHOLD_FAILURE_RATE || selectedThresholds.failureRate;
 const p95DurationThreshold = __ENV.K6_THRESHOLD_P95_DURATION || selectedThresholds.p95Duration;
 const checksRateThreshold = __ENV.K6_THRESHOLD_CHECKS_RATE || selectedThresholds.checksRate;
@@ -61,67 +54,25 @@ const thresholds = {
     checks: [checksRateThreshold],
 };
 
-export const options = selectedProfile.iterations
-  ? {
-      scenarios: {
-        payments: {
-          executor: "shared-iterations",
-          vus: configuredVus,
-          iterations: selectedProfile.iterations,
-          maxDuration: selectedProfile.maxDuration,
-        },
-      },
-      thresholds,
-    }
-  : {
-      vus: configuredVus,
-      duration: durationOverride || selectedProfile.duration,
-      thresholds,
-    };
+export const options = {
+  vus: configuredVus,
+  duration: selectedProfile.duration,
+  thresholds,
+};
 
 export function setup() {
   const healthUrl = `${gatewayBaseUrl}/health`;
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const response = http.get(healthUrl);
     if (response.status === 200) {
-      if (testProfile !== "volume50k") {
-        return {};
-      }
-
-      const seedResponse = http.post(
-        `${billingBaseUrl}/payments`,
-        JSON.stringify({
-          enrollmentId: 9000001,
-          studentId: 900001,
-          amount: 1.0,
-          simulateFailure: false,
-        }),
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": `${idempotencyKeyPrefix}-seed`,
-          },
-        },
-      );
-      if (seedResponse.status !== 200) {
-        throw new Error(`volume50k seed payment failed with status ${seedResponse.status}`);
-      }
-      return { paymentId: seedResponse.json("paymentId") };
+      return {};
     }
     sleep(1);
   }
   throw new Error(`gateway is not healthy at ${healthUrl}`);
 }
 
-export default function (setupData) {
-  if (testProfile === "volume50k") {
-    const response = http.get(`${billingBaseUrl}/payments/${setupData.paymentId}`);
-    check(response, {
-      "GET /payments/{id} status is 200": (r) => r.status === 200,
-    });
-    return;
-  }
-
+export default function () {
   group("billing-service payment creation", () => {
     const payload = JSON.stringify({
       enrollmentId: Math.floor(Math.random() * 100000),

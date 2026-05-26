@@ -2,7 +2,9 @@ param(
     [switch]$SkipCleanup,
     [switch]$AllowDestructiveCleanup,
     [string]$ComposeFile = "docker-compose.yml",
-    [string]$GatewayBaseUrl = "http://localhost:8080"
+    [string]$GatewayBaseUrl = "http://localhost:8080",
+    [int]$EndpointRetryAttempts = 8,
+    [int]$EndpointTimeoutSeconds = 10
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,25 +26,101 @@ function Invoke-Compose {
     }
 }
 
+function Get-WebFailureMessage {
+    param(
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [string]$Label
+    )
+
+    $response = $ErrorRecord.Exception.Response
+    if ($response -and $response.StatusCode) {
+        return "[ERROR] $Label returned HTTP $([int]$response.StatusCode)"
+    }
+
+    if ($ErrorRecord.Exception.Message -match "timed out|timeout|operation has timed out") {
+        return "[ERROR] $Label timeout"
+    }
+
+    if ($ErrorRecord.Exception.Message -match "returned HTTP|returned invalid JSON|returned unexpected payload") {
+        return "[ERROR] $($ErrorRecord.Exception.Message)"
+    }
+
+    return "[ERROR] $Label connection failed: $($ErrorRecord.Exception.Message)"
+}
+
 function Test-Endpoint200 {
-    param([string]$Url)
-    $attempts = 8
-    for ($i = 1; $i -le $attempts; $i++) {
+    param(
+        [string]$Url,
+        [string]$Label = $Url,
+        [int]$Attempts = 8,
+        [int]$TimeoutSeconds = 10
+    )
+
+    for ($i = 1; $i -le $Attempts; $i++) {
         try {
-            $response = Invoke-WebRequest -Uri $Url -Method GET -UseBasicParsing -TimeoutSec 20
+            $response = Invoke-WebRequest -Uri $Url -Method GET -UseBasicParsing -TimeoutSec $TimeoutSeconds
             if ($response.StatusCode -eq 200) {
-                Write-Host "[OK]  $Url -> 200" -ForegroundColor Green
+                Write-Host "[OK]  $Label -> 200" -ForegroundColor Green
                 return
             }
-        } catch {
-            if ($i -eq $attempts) {
-                Write-Host "[ERR] $Url -> $($_.Exception.Message)" -ForegroundColor Red
-                throw
+
+            if ($i -eq $Attempts) {
+                Write-Host "[ERROR] $Label returned HTTP $($response.StatusCode)" -ForegroundColor Red
+                throw "$Label returned HTTP $($response.StatusCode)"
             }
-            Start-Sleep -Seconds 3
+        } catch {
+            if ($i -eq $Attempts) {
+                Write-Host (Get-WebFailureMessage -ErrorRecord $_ -Label $Label) -ForegroundColor Red
+                throw "$Label failed after $Attempts attempts"
+            }
+            Start-Sleep -Seconds 2
         }
     }
-    throw "Endpoint failed after retries: $Url"
+    throw "$Label failed after retries: $Url"
+}
+
+function Test-HealthEndpoint {
+    param(
+        [string]$Url,
+        [string]$Label,
+        [int]$Attempts = 8,
+        [int]$TimeoutSeconds = 10
+    )
+
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            $response = Invoke-WebRequest -Uri $Url -Method GET -UseBasicParsing -TimeoutSec $TimeoutSeconds
+            if ($response.StatusCode -ne 200) {
+                if ($i -eq $Attempts) {
+                    Write-Host "[ERROR] $Label health returned HTTP $($response.StatusCode)" -ForegroundColor Red
+                    throw "$Label health returned HTTP $($response.StatusCode)"
+                }
+                Start-Sleep -Seconds 2
+                continue
+            }
+
+            try {
+                $payload = $response.Content | ConvertFrom-Json
+            } catch {
+                Write-Host "[ERROR] $Label health returned invalid JSON" -ForegroundColor Red
+                throw "$Label health returned invalid JSON"
+            }
+
+            if ($payload.status -ne "UP") {
+                Write-Host "[ERROR] $Label health returned unexpected payload: $($response.Content)" -ForegroundColor Red
+                throw "$Label health returned unexpected payload"
+            }
+
+            Write-Host "[OK]  $Label health -> UP" -ForegroundColor Green
+            return
+        } catch {
+            if ($i -eq $Attempts) {
+                Write-Host (Get-WebFailureMessage -ErrorRecord $_ -Label "$Label health endpoint") -ForegroundColor Red
+                throw "$Label health failed after $Attempts attempts"
+            }
+            Start-Sleep -Seconds 2
+        }
+    }
 }
 
 function Wait-ContainerHealthy {
@@ -72,14 +150,12 @@ if (-not (Test-Path $ComposeFile)) {
 }
 
 if ($AllowDestructiveCleanup) {
-    Write-Step "Destructive cleanup requested explicitly (down -v)"
-    Write-Warning "This deletes Docker volumes, including PostgreSQL data. Use only in disposable local environments."
-    Invoke-Compose -ComposeArgs @("down", "-v")
+    throw "Destructive cleanup is disabled in gateway-smoke.ps1. This smoke test never deletes Docker volumes."
 } else {
     if ($SkipCleanup) {
         Write-Step "Safe mode: -SkipCleanup accepted for backwards compatibility."
     } else {
-        Write-Step "Safe mode: skipping destructive cleanup. Use -AllowDestructiveCleanup only for disposable local resets."
+        Write-Step "Safe mode: skipping cleanup. This smoke test does not delete Docker volumes."
     }
 }
 
@@ -100,9 +176,22 @@ Wait-ContainerHealthy -ContainerName "campusenroll-notification-service"
 Wait-ContainerHealthy -ContainerName "campusenroll-enrollment-service"
 Wait-ContainerHealthy -ContainerName "campusenroll-api-gateway"
 
-Write-Step "Validate gateway endpoints"
+Write-Step "Validate gateway health endpoints"
+$healthEndpoints = @(
+    @{ Label = "gateway /health"; Url = "$GatewayBaseUrl/health" },
+    @{ Label = "student-service"; Url = "$GatewayBaseUrl/health/student-service" },
+    @{ Label = "course-service"; Url = "$GatewayBaseUrl/health/course-service" },
+    @{ Label = "billing-service"; Url = "$GatewayBaseUrl/health/billing-service" },
+    @{ Label = "notification-service"; Url = "$GatewayBaseUrl/health/notification-service" },
+    @{ Label = "enrollment-service"; Url = "$GatewayBaseUrl/health/enrollment-service" }
+)
+
+foreach ($endpoint in $healthEndpoints) {
+    Test-HealthEndpoint -Url $endpoint.Url -Label $endpoint.Label -Attempts $EndpointRetryAttempts -TimeoutSeconds $EndpointTimeoutSeconds
+}
+
+Write-Step "Validate gateway read endpoints"
 $urls = @(
-    "$GatewayBaseUrl/health",
     "$GatewayBaseUrl/students",
     "$GatewayBaseUrl/api/students",
     "$GatewayBaseUrl/courses",
@@ -114,7 +203,7 @@ $urls = @(
 )
 
 foreach ($url in $urls) {
-    Test-Endpoint200 -Url $url
+    Test-Endpoint200 -Url $url -Attempts $EndpointRetryAttempts -TimeoutSeconds $EndpointTimeoutSeconds
 }
 
 Write-Host ""

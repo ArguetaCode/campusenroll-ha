@@ -3,6 +3,7 @@ param(
     [string]$GatewayBaseUrl = "http://localhost:8080",
     [int]$ContainerWaitAttempts = 30,
     [int]$EndpointRetryAttempts = 8,
+    [int]$EndpointTimeoutSeconds = 10,
     [switch]$SkipFlyway
 )
 
@@ -94,30 +95,108 @@ function Wait-ContainerHealthy {
     }
 }
 
+function Get-WebFailureMessage {
+    param(
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [string]$Label
+    )
+
+    $response = $ErrorRecord.Exception.Response
+    if ($response -and $response.StatusCode) {
+        return "[ERROR] $Label returned HTTP $([int]$response.StatusCode)"
+    }
+
+    if ($ErrorRecord.Exception.Message -match "timed out|timeout|operation has timed out") {
+        return "[ERROR] $Label timeout"
+    }
+
+    if ($ErrorRecord.Exception.Message -match "returned HTTP|returned invalid JSON|returned unexpected payload") {
+        return "[ERROR] $($ErrorRecord.Exception.Message)"
+    }
+
+    return "[ERROR] $Label connection failed: $($ErrorRecord.Exception.Message)"
+}
+
 function Test-Endpoint200 {
     param(
         [string]$Url,
-        [int]$Attempts = 8
+        [string]$Label = $Url,
+        [int]$Attempts = 8,
+        [int]$TimeoutSeconds = 10
     )
 
     for ($i = 1; $i -le $Attempts; $i++) {
         try {
-            $response = Invoke-WebRequest -Uri $Url -Method GET -UseBasicParsing -TimeoutSec 20
+            $response = Invoke-WebRequest -Uri $Url -Method GET -UseBasicParsing -TimeoutSec $TimeoutSeconds
             if ($response.StatusCode -eq 200) {
-                Write-Host "[OK]  $Url -> 200" -ForegroundColor Green
+                Write-Host "[OK]  $Label -> 200" -ForegroundColor Green
                 return
+            }
+
+            if ($i -eq $Attempts) {
+                Write-Host "[ERROR] $Label returned HTTP $($response.StatusCode)" -ForegroundColor Red
+                Write-ComposeDiagnostics
+                throw "$Label returned HTTP $($response.StatusCode)"
             }
         } catch {
             if ($i -eq $Attempts) {
-                Write-Host "[ERR] $Url -> $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host (Get-WebFailureMessage -ErrorRecord $_ -Label $Label) -ForegroundColor Red
                 Write-ComposeDiagnostics
-                throw
+                throw "$Label failed after $Attempts attempts"
             }
-            Start-Sleep -Seconds 3
+            Start-Sleep -Seconds 2
         }
     }
 
-    throw "Endpoint failed after retries: $Url"
+    throw "$Label failed after retries: $Url"
+}
+
+function Test-HealthEndpoint {
+    param(
+        [string]$Url,
+        [string]$Label,
+        [int]$Attempts = 8,
+        [int]$TimeoutSeconds = 10
+    )
+
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            $response = Invoke-WebRequest -Uri $Url -Method GET -UseBasicParsing -TimeoutSec $TimeoutSeconds
+            if ($response.StatusCode -ne 200) {
+                if ($i -eq $Attempts) {
+                    Write-Host "[ERROR] $Label health returned HTTP $($response.StatusCode)" -ForegroundColor Red
+                    Write-ComposeDiagnostics
+                    throw "$Label health returned HTTP $($response.StatusCode)"
+                }
+                Start-Sleep -Seconds 2
+                continue
+            }
+
+            try {
+                $payload = $response.Content | ConvertFrom-Json
+            } catch {
+                Write-Host "[ERROR] $Label health returned invalid JSON" -ForegroundColor Red
+                Write-ComposeDiagnostics
+                throw "$Label health returned invalid JSON"
+            }
+
+            if ($payload.status -ne "UP") {
+                Write-Host "[ERROR] $Label health returned unexpected payload: $($response.Content)" -ForegroundColor Red
+                Write-ComposeDiagnostics
+                throw "$Label health returned unexpected payload"
+            }
+
+            Write-Host "[OK]  $Label health -> UP" -ForegroundColor Green
+            return
+        } catch {
+            if ($i -eq $Attempts) {
+                Write-Host (Get-WebFailureMessage -ErrorRecord $_ -Label "$Label health endpoint") -ForegroundColor Red
+                Write-ComposeDiagnostics
+                throw "$Label health failed after $Attempts attempts"
+            }
+            Start-Sleep -Seconds 2
+        }
+    }
 }
 
 function Test-PaymentWriteReadiness {
@@ -141,7 +220,7 @@ function Test-PaymentWriteReadiness {
             $headers = @{
                 "Idempotency-Key" = "smoke-readiness-$studentId-$enrollmentId"
             }
-            $response = Invoke-WebRequest -Uri $url -Method POST -Body $payload -ContentType "application/json" -Headers $headers -UseBasicParsing -TimeoutSec 30
+            $response = Invoke-WebRequest -Uri $url -Method POST -Body $payload -ContentType "application/json" -Headers $headers -UseBasicParsing -TimeoutSec 15
             if ($response.StatusCode -eq 200) {
                 Write-Host "[OK]  POST $url -> 200" -ForegroundColor Green
                 return @{
@@ -150,13 +229,19 @@ function Test-PaymentWriteReadiness {
                     payment = ($response.Content | ConvertFrom-Json)
                 }
             }
+
+            if ($i -eq $Attempts) {
+                Write-Host "[ERROR] payment write path returned HTTP $($response.StatusCode)" -ForegroundColor Red
+                Write-ComposeDiagnostics
+                throw "payment write path returned HTTP $($response.StatusCode)"
+            }
         } catch {
             if ($i -eq $Attempts) {
-                Write-Host "[ERR] POST $url -> $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host (Get-WebFailureMessage -ErrorRecord $_ -Label "payment write path") -ForegroundColor Red
                 Write-ComposeDiagnostics
-                throw
+                throw "payment write path failed after $Attempts attempts"
             }
-            Start-Sleep -Seconds 3
+            Start-Sleep -Seconds 2
         }
     }
 
@@ -176,7 +261,7 @@ function Test-PaymentNotificationReadiness {
 
     for ($i = 1; $i -le $Attempts; $i++) {
         try {
-            $response = Invoke-WebRequest -Uri $url -Method GET -UseBasicParsing -TimeoutSec 20
+            $response = Invoke-WebRequest -Uri $url -Method GET -UseBasicParsing -TimeoutSec 10
             if ($response.StatusCode -eq 200) {
                 $notifications = $response.Content | ConvertFrom-Json
                 $match = $notifications | Where-Object { $_.paymentId -eq $paymentId } | Select-Object -First 1
@@ -187,9 +272,9 @@ function Test-PaymentNotificationReadiness {
             }
         } catch {
             if ($i -eq $Attempts) {
-                Write-Host "[ERR] GET $url -> $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host (Get-WebFailureMessage -ErrorRecord $_ -Label "notification readiness endpoint") -ForegroundColor Red
                 Write-ComposeDiagnostics
-                throw
+                throw "notification readiness endpoint failed after $Attempts attempts"
             }
         }
 
@@ -197,7 +282,7 @@ function Test-PaymentNotificationReadiness {
             Write-ComposeDiagnostics
             throw "notification-service did not expose notification for payment $paymentId after $Attempts attempts"
         }
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 2
     }
 }
 
@@ -230,9 +315,22 @@ Wait-ContainerHealthy -ContainerName "campusenroll-notification-service" -MaxAtt
 Wait-ContainerHealthy -ContainerName "campusenroll-enrollment-service" -MaxAttempts $ContainerWaitAttempts
 Wait-ContainerHealthy -ContainerName "campusenroll-api-gateway" -MaxAttempts $ContainerWaitAttempts
 
-Write-Step "Validate gateway endpoints"
+Write-Step "Validate gateway health endpoints"
+$healthEndpoints = @(
+    @{ Label = "gateway /health"; Url = "$GatewayBaseUrl/health" },
+    @{ Label = "student-service"; Url = "$GatewayBaseUrl/health/student-service" },
+    @{ Label = "course-service"; Url = "$GatewayBaseUrl/health/course-service" },
+    @{ Label = "billing-service"; Url = "$GatewayBaseUrl/health/billing-service" },
+    @{ Label = "notification-service"; Url = "$GatewayBaseUrl/health/notification-service" },
+    @{ Label = "enrollment-service"; Url = "$GatewayBaseUrl/health/enrollment-service" }
+)
+
+foreach ($endpoint in $healthEndpoints) {
+    Test-HealthEndpoint -Url $endpoint.Url -Label $endpoint.Label -Attempts $EndpointRetryAttempts -TimeoutSeconds $EndpointTimeoutSeconds
+}
+
+Write-Step "Validate gateway read endpoints"
 $urls = @(
-    "$GatewayBaseUrl/health",
     "$GatewayBaseUrl/students",
     "$GatewayBaseUrl/api/students",
     "$GatewayBaseUrl/courses",
@@ -244,7 +342,7 @@ $urls = @(
 )
 
 foreach ($url in $urls) {
-    Test-Endpoint200 -Url $url -Attempts $EndpointRetryAttempts
+    Test-Endpoint200 -Url $url -Attempts $EndpointRetryAttempts -TimeoutSeconds $EndpointTimeoutSeconds
 }
 
 Write-Step "Validate payment write path"

@@ -317,35 +317,30 @@ docker compose up -d --build
 docker compose --profile testing run --rm -e GATEWAY_BASE_URL=http://campusenroll-api-gateway:8080 k6 run /scripts/load-test.js
 ```
 
-## k6 por perfiles (gateway)
+## k6 smoke seguro (gateway)
 
-`tests/load-test.js` soporta perfiles:
+`tests/load-test.js` soporta solo el perfil seguro actual:
 
 - `smoke`: `5` VUs por `20s`
-- `baseline`: `20` VUs por `60s`
+
+Los perfiles `baseline` y `volume50k` estan deshabilitados en esta fase del proyecto. k6 se usa solo para smoke funcional pequeno en CI/demo, no para performance ni carga masiva.
 
 Overrides disponibles:
 
 - `TEST_PROFILE`
-- `K6_VUS`
-- `K6_DURATION`
 - `GATEWAY_BASE_URL`
 - `INCLUDE_NOTIFICATION_CHECK`
 - `K6_THRESHOLD_FAILURE_RATE`
 - `K6_THRESHOLD_P95_DURATION`
 - `K6_THRESHOLD_CHECKS_RATE`
 
+`K6_VUS`, `K6_DURATION`, `K6_SLEEP_SECONDS`, `K6_FLOW_VUS`, `K6_FLOW_ITERATIONS` y `K6_FLOW_MAX_DURATION` estan deshabilitados para evitar carga accidental.
+
 Ejemplos:
 
 ```bash
 # smoke
 docker compose --profile testing run --rm -e GATEWAY_BASE_URL=http://campusenroll-api-gateway:8080 -e TEST_PROFILE=smoke k6 run /scripts/load-test.js
-
-# baseline
-docker compose --profile testing run --rm -e GATEWAY_BASE_URL=http://campusenroll-api-gateway:8080 -e TEST_PROFILE=baseline k6 run /scripts/load-test.js
-
-# override puntual
-docker compose --profile testing run --rm -e GATEWAY_BASE_URL=http://campusenroll-api-gateway:8080 -e TEST_PROFILE=baseline -e K6_VUS=15 -e K6_DURATION=45s k6 run /scripts/load-test.js
 ```
 
 ## Script CI de k6
@@ -358,7 +353,7 @@ Caracteristicas:
 
 - Ejecuta precheck con `gateway-smoke-ci.ps1` (puede omitirse con `-SkipGatewayPrecheck`).
 - Corre k6 contra el gateway Nginx.
-- Permite `smoke` y `baseline` + overrides de VUs/duracion.
+- Permite solo `smoke`; bloquea `baseline`, `volume50k` y overrides de VUs/duracion.
 - Exporta artefactos JSON (`summary` y `results`) en `artifacts/k6`.
 - Aplica thresholds de k6 para pass/fail automatico.
 - Valida de forma ligera el `summary-*.json` generado: JSON valido, metricas base y bloques de thresholds.
@@ -369,11 +364,10 @@ Uso:
 ```powershell
 cd campusenroll-ha
 powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke
-powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile baseline -K6Vus 25 -K6Duration 90s
 powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -K6Script enrollment-flow-smoke.js
 
 # fail controlado para validar pass/fail automatico de thresholds en CI
-powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -K6Vus 1 -K6Duration 5s -K6ThresholdChecksRate "rate>1"
+powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -K6ThresholdChecksRate "rate>1"
 ```
 
 ## GitHub Actions
@@ -393,8 +387,8 @@ Nota local: el workflow vive en `.github/workflows/campusenroll-ci.yml` dentro d
 ## Smoke tests seguros
 
 - `scripts/gateway-smoke-ci.ps1`: recomendado para CI y demos seguras. No borra volumenes.
-- `scripts/gateway-smoke.ps1`: recomendado para ejecucion local manual. Ahora tambien es seguro por defecto y no borra volumenes.
-- `scripts/gateway-smoke.ps1 -AllowDestructiveCleanup`: solo para reset local descartable; ejecuta `down -v` y borra datos.
+- `scripts/gateway-smoke.ps1`: recomendado para ejecucion local manual. Es seguro por defecto y no borra volumenes.
+- `scripts/gateway-smoke.ps1 -AllowDestructiveCleanup`: queda deshabilitado en el smoke test; falla con un mensaje claro para evitar borrado accidental de volumenes.
 
 ## k6 actual y prueba de flujo completo
 
@@ -412,6 +406,7 @@ Se agrega `tests/enrollment-flow-smoke.js` como smoke pequeno de flujo completo:
 - Crea seccion con horario.
 - Crea inscripcion con pago aprobado.
 - Consulta notificaciones del estudiante.
+- Esta pensado para demo/local controlado. Crea datos reales y queda limitado a 1 VU y 1 iteracion.
 
 Uso seguro:
 
@@ -420,7 +415,7 @@ docker compose up -d --build
 docker compose --profile testing run --rm -e GATEWAY_BASE_URL=http://campusenroll-api-gateway:8080 k6 run /scripts/enrollment-flow-smoke.js
 ```
 
-O con el runner de CI:
+O con el runner de k6 para una demo controlada:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -K6Script enrollment-flow-smoke.js
