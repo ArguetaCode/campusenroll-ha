@@ -189,7 +189,7 @@ jobs:
       - name: Run k6 smoke profile
         if: steps.ci-token.outputs.available == 'true'
         shell: pwsh
-        run: ./scripts/k6-gateway-ci.ps1 -TestProfile smoke -SkipGatewayPrecheck
+        run: ./scripts/k6-gateway-ci.ps1 -TestProfile smoke -SkipGatewayPrecheck -K6ThresholdP95Duration "p(95)<5000" -K6ThresholdChecksRate "rate>0.95"
 
       - name: Upload k6 artifacts
         if: always() && steps.ci-token.outputs.available == 'true'
