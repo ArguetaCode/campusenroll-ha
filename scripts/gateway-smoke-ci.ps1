@@ -173,7 +173,12 @@ function Test-HealthEndpoint {
             }
 
             try {
-                $payload = $response.Content | ConvertFrom-Json
+                $content = if ($response.Content -is [byte[]]) {
+                    [System.Text.Encoding]::UTF8.GetString($response.Content)
+                } else {
+                    $response.Content
+                }
+                $payload = $content | ConvertFrom-Json
             } catch {
                 Write-Host "[ERROR] $Label health returned invalid JSON" -ForegroundColor Red
                 Write-ComposeDiagnostics
@@ -181,7 +186,7 @@ function Test-HealthEndpoint {
             }
 
             if ($payload.status -ne "UP") {
-                Write-Host "[ERROR] $Label health returned unexpected payload: $($response.Content)" -ForegroundColor Red
+                Write-Host "[ERROR] $Label health returned unexpected payload: $content" -ForegroundColor Red
                 Write-ComposeDiagnostics
                 throw "$Label health returned unexpected payload"
             }
@@ -205,28 +210,43 @@ function Test-PaymentWriteReadiness {
         [int]$Attempts = 8
     )
 
-    $url = "$BaseUrl/payments"
-    $studentId = Get-Random -Minimum 100000 -Maximum 999999
-    $enrollmentId = Get-Random -Minimum 1000000 -Maximum 9999999
+    $url = "$BaseUrl/api/enrollments"
     for ($i = 1; $i -le $Attempts; $i++) {
-        $payload = @{
-            enrollmentId = $enrollmentId
-            studentId = $studentId
-            amount = 1.00
-            simulateFailure = $false
-        } | ConvertTo-Json -Compress
-
         try {
-            $headers = @{
-                "Idempotency-Key" = "smoke-readiness-$studentId-$enrollmentId"
-            }
-            $response = Invoke-WebRequest -Uri $url -Method POST -Body $payload -ContentType "application/json" -Headers $headers -UseBasicParsing -TimeoutSec 15
+            $suffix = "$(Get-Date -Format 'yyyyMMddHHmmssfff')-$i"
+            $student = Invoke-RestMethod -Uri "$BaseUrl/students" -Method POST -ContentType "application/json" -TimeoutSec 15 -Body (@{
+                fullName = "Smoke Payment $suffix"
+                email = "smoke-payment-$suffix@campusenroll.local"
+                status = "ACTIVE"
+            } | ConvertTo-Json -Compress)
+            $course = Invoke-RestMethod -Uri "$BaseUrl/courses" -Method POST -ContentType "application/json" -TimeoutSec 15 -Body (@{
+                courseCode = "SP-$suffix"
+                name = "Smoke Payment Course $suffix"
+                description = "Payment readiness"
+                status = "ACTIVE"
+            } | ConvertTo-Json -Compress)
+            $section = Invoke-RestMethod -Uri "$BaseUrl/sections" -Method POST -ContentType "application/json" -TimeoutSec 15 -Body (@{
+                courseId = $course.id
+                sectionCode = "SP-$suffix"
+                maxCapacity = 1
+                status = "ACTIVE"
+                schedules = @()
+            } | ConvertTo-Json -Compress)
+            $payload = @{
+                studentId = $student.id
+                sectionId = $section.id
+                amount = 1.00
+                simulatePaymentFailure = $false
+            } | ConvertTo-Json -Compress
+
+            $response = Invoke-WebRequest -Uri $url -Method POST -Body $payload -ContentType "application/json" -UseBasicParsing -TimeoutSec 15
             if ($response.StatusCode -eq 200) {
-                Write-Host "[OK]  POST $url -> 200" -ForegroundColor Green
+                $enrollment = $response.Content | ConvertFrom-Json
+                Write-Host "[OK]  POST $url with valid payment -> 200" -ForegroundColor Green
                 return @{
-                    studentId = $studentId
-                    enrollmentId = $enrollmentId
-                    payment = ($response.Content | ConvertFrom-Json)
+                    studentId = $student.id
+                    enrollmentId = $enrollment.id
+                    payment = @{ paymentId = $enrollment.paymentReference }
                 }
             }
 
@@ -245,7 +265,7 @@ function Test-PaymentWriteReadiness {
         }
     }
 
-    throw "Payment write readiness failed after retries: $url"
+    throw "Enrollment payment readiness failed after retries: $url"
 }
 
 function Test-PaymentNotificationReadiness {
@@ -345,7 +365,7 @@ foreach ($url in $urls) {
     Test-Endpoint200 -Url $url -Attempts $EndpointRetryAttempts -TimeoutSeconds $EndpointTimeoutSeconds
 }
 
-Write-Step "Validate payment write path"
+Write-Step "Validate enrollment payment write path"
 Test-PaymentWriteReadiness -BaseUrl $GatewayBaseUrl -Attempts $EndpointRetryAttempts
 
 Write-Step "Validate payment notification async path"

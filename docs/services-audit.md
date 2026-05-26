@@ -29,10 +29,12 @@ Todos los servicios usan la misma base; no se usan `student_db`, `course_db` ni 
 - Validacion obligatoria de estudiante activo (`GET /students/{id}/status`).
 - Validacion de existencia de seccion (`GET /sections/{id}`).
 - Validacion de inscripcion duplicada para `PENDING_PAYMENT` y `CONFIRMED`.
+- Estados y transiciones coordinados con billing documentados en `docs/enrollment-payment-states.md`.
 - Validacion de traslape de horarios por `dayOfWeek/startTime/endTime`.
 - Flujo robusto de cupo+pago:
   - reserva cupo
   - crea `PENDING_PAYMENT`
+  - billing solo acepta pago para una inscripcion pendiente valida del mismo estudiante
   - procesa pago
   - confirma cupo y estado `CONFIRMED` si `APPROVED`
   - libera cupo y estado `PAYMENT_FAILED` si `FAILED` o error de integracion

@@ -2,11 +2,9 @@ import http from "k6/http";
 import { check, group, sleep } from "k6";
 
 const gatewayBaseUrl = __ENV.GATEWAY_BASE_URL || "http://localhost:8080";
-const billingBaseUrl = __ENV.BILLING_BASE_URL || gatewayBaseUrl;
 const notificationBaseUrl = __ENV.NOTIFICATION_BASE_URL || gatewayBaseUrl;
 const includeNotificationCheck = (__ENV.INCLUDE_NOTIFICATION_CHECK || "false").toLowerCase() === "true";
 const testProfile = (__ENV.TEST_PROFILE || "smoke").toLowerCase();
-const idempotencyKeyPrefix = __ENV.K6_IDEMPOTENCY_KEY_PREFIX || `k6-${testProfile}`;
 
 if (testProfile !== "smoke") {
   throw new Error(`[ERROR] ${testProfile} profile is disabled in current project phase. Only smoke is allowed.`);
@@ -24,7 +22,7 @@ if (__ENV.K6_SLEEP_SECONDS) {
   throw new Error("[ERROR] K6_SLEEP_SECONDS override is disabled to avoid accidental high-throughput smoke runs.");
 }
 
-console.warn("[WARN] load-test.js is a small smoke test and creates real test payment rows.");
+console.warn("[WARN] load-test.js is a small smoke test and creates real enrollment and payment rows.");
 
 const profileOptions = {
   smoke: {
@@ -73,23 +71,43 @@ export function setup() {
 }
 
 export default function () {
-  group("billing-service payment creation", () => {
-    const payload = JSON.stringify({
-      enrollmentId: Math.floor(Math.random() * 100000),
-      studentId: Math.floor(Math.random() * 10000),
-      amount: 250.0,
-      simulateFailure: false,
-    });
+  group("enrollment-service payment creation", () => {
+    const suffix = `${Date.now()}-${__VU}-${__ITER}`;
+    const headers = { headers: { "Content-Type": "application/json" } };
+    const student = http.post(`${gatewayBaseUrl}/students`, JSON.stringify({
+      fullName: `Load Student ${suffix}`,
+      email: `${suffix}@campusenroll.local`,
+      status: "ACTIVE",
+    }), headers);
+    const studentId = student.json("id");
 
-    const response = http.post(`${billingBaseUrl}/payments`, payload, {
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": `${idempotencyKeyPrefix}-vu-${__VU}`,
-      },
-    });
+    const course = http.post(`${gatewayBaseUrl}/courses`, JSON.stringify({
+      courseCode: `LD-${suffix}`,
+      name: `Load Course ${suffix}`,
+      description: "Enrollment payment smoke",
+      status: "ACTIVE",
+    }), headers);
+    const courseId = course.json("id");
+
+    const section = http.post(`${gatewayBaseUrl}/sections`, JSON.stringify({
+      courseId,
+      sectionCode: `LD-${__VU}-${__ITER}`,
+      maxCapacity: 1,
+      status: "ACTIVE",
+      schedules: [],
+    }), headers);
+    const sectionId = section.json("id");
+
+    const response = http.post(`${gatewayBaseUrl}/api/enrollments`, JSON.stringify({
+      studentId,
+      sectionId,
+      amount: 250.0,
+      simulatePaymentFailure: false,
+    }), headers);
 
     check(response, {
-      "POST /payments status is 200": (r) => r.status === 200,
+      "POST /api/enrollments status is 200": (r) => r.status === 200,
+      "enrollment payment is confirmed": (r) => r.json("status") === "CONFIRMED",
     });
   });
 

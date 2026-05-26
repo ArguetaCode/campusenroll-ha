@@ -513,6 +513,7 @@ erDiagram
 - **Restricciones unicas:** evitan estudiantes duplicados, cursos duplicados, inscripciones duplicadas y eventos de notificacion duplicados.
 - **Locks logicos o de negocio:** `course-service` usa bloqueo al consultar seccion para actualizar cupos y evitar condiciones de carrera.
 - **Control de estados:** la inscripcion debe pasar por estados validos como `PENDING_PAYMENT`, `CONFIRMED` y `PAYMENT_FAILED`.
+- **Integridad pago-inscripcion:** billing solo registra pagos para una inscripcion existente del mismo estudiante en estado `PENDING_PAYMENT`; los resultados repetidos son idempotentes y los contradictorios se rechazan.
 - **Idempotencia:** `notification-service` usa Redis y `event_id` unico para no procesar el mismo evento dos veces.
 - **Sagas:** el flujo de inscripcion actua como saga: reservar cupo, crear inscripcion, procesar pago, confirmar o compensar.
 - **Compensaciones:** si el pago falla o ocurre un error, el cupo reservado se libera.

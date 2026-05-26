@@ -2,8 +2,8 @@
 
 - [ ] `docker ps` mostrando contenedores de infraestructura y microservicios clave.
 - [ ] Postman `GET http://localhost:8083/health` (billing).
-- [ ] Postman `POST http://localhost:8083/payments` con resultado `APPROVED`.
-- [ ] Postman `POST http://localhost:8083/payments` con resultado `FAILED`.
+- [ ] Postman `POST http://localhost:8085/api/enrollments` con pago aprobado y estado `CONFIRMED`.
+- [ ] Postman `POST http://localhost:8085/api/enrollments` con `simulatePaymentFailure=true` y estado `PAYMENT_FAILED`.
 - [ ] PostgreSQL con registros en `campusenroll.payments`.
 - [ ] Redis con keys `billing:payment:*:status`.
 - [ ] RabbitMQ exchange `campusenroll.payments`.
