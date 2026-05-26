@@ -119,26 +119,25 @@ Notification service:
 - `campusenroll-rabbitmq`
 - `campusenroll-prometheus`
 - `campusenroll-grafana`
+- `campusenroll-api-gateway`
 - `billing-service`
 - `notification-service`
-- `student-service` bajo profile `future`
-- `course-service` bajo profile `future`
-- `enrollment-service` bajo profile `future`
+- `student-service`
+- `course-service`
+- `enrollment-service`
 - `k6` bajo profile `testing`
 
-**Servicios pendientes o parciales:**
+**Pendientes tecnicos principales:**
 
-- Integracion completa del flujo end-to-end entre frontend, gateway/punto de entrada y todos los microservicios.
-- Homologacion final de `student-service`, `course-service` y `enrollment-service` dentro del Compose principal.
-- API Gateway formal. Actualmente el punto de entrada puede ser el frontend o llamadas directas por puerto/Postman.
+- Fortalecer la prueba automatizada del flujo end-to-end entre frontend, gateway y todos los microservicios.
+- Homologar `enrollment-service` a la misma version Spring Boot usada por los demas servicios.
 - Pruebas integradas automatizadas del flujo completo.
-- Hardening de alta disponibilidad real con replicas, health checks y balanceo.
+- Hardening de alta disponibilidad real con replicas, health checks avanzados y balanceo.
 
 **Riesgos tecnicos identificados:**
 
 - `enrollment-service` tiene estructura de carpetas anidada, lo que dificulta mantenimiento.
-- Algunos servicios estan marcados en Docker Compose como `future`, por lo que no forman parte del despliegue base.
-- No existe todavia un API Gateway unico.
+- El stack local usa un gateway Nginx unico, pero todavia no tiene alta disponibilidad real para ese componente.
 - La publicacion de eventos ocurre despues de guardar pago, pero falta implementar formalmente Outbox Pattern para garantizar entrega ante fallos intermedios.
 - Si Redis se reinicia, se pierden caches temporales e idempotencia temporal.
 - Si RabbitMQ no esta disponible, se afecta la entrega asincrona de notificaciones.

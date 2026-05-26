@@ -16,7 +16,7 @@ Todos los servicios usan la misma base; no se usan `student_db`, `course_db` ni 
 - `course-service` (`8082`): activo, expone secciones, horarios y reserva/confirmacion/liberacion de cupos.
 - `billing-service` (`8083`): activo, procesa pagos y publica eventos.
 - `notification-service` (`8084`): activo, consume eventos y persiste notificaciones.
-- `enrollment-service` (`8085`, profile `future`): hardening aplicado.
+- `enrollment-service` (`8085`): activo en el Compose principal, orquesta inscripcion, pago y transiciones de cupo.
 
 ## Hardening aplicado en enrollment-service
 
@@ -53,4 +53,4 @@ Todos los servicios usan la misma base; no se usan `student_db`, `course_db` ni 
 `monitoring/prometheus.yml` incluye target:
 - `enrollment-service:8085` con `metrics_path: /actuator/prometheus`.
 
-Nota: si profile `future` no esta activo, ese target aparecera DOWN.
+Nota: el target debe aparecer `UP` cuando el stack principal esta levantado con `docker compose up -d --build`.

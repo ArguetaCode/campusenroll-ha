@@ -27,6 +27,7 @@ Todavia no existe:
 Documentos operativos nuevos:
 
 - `docs/operational-baseline.md`: baseline seguro, puertos, health checks, Flyway y comandos peligrosos.
+- `docs/demo-local.md`: flujo corto de demo local por gateway con pago aprobado, pago fallido y notificaciones.
 - `docs/lan-lab-runbook.md`: guia por nodos LAN sin Kubernetes ni Docker Swarm.
 - `docs/postgresql-ha-lab.md`: guia inicial de primaria/replica, streaming replication, WAL/PITR y promocion manual.
 - `docs/postgresql-ha-lab-post-promotion.md`: flujo para reconstruir el laboratorio despues de promover una replica.
@@ -402,7 +403,7 @@ Workflow: `.github/workflows/campusenroll-ci.yml`
   - Ejecuta `scripts/k6-gateway-ci.ps1 -TestProfile smoke`.
   - Publica `artifacts/k6/*.json` como artifact del job.
 - Requiere el secret `CAMPUSENROLL_CI_TOKEN` con permisos de lectura sobre los repos privados hermanos (`student-service`, `course-service`, `billing-service`, `notification`, `enrollment-service`).
-- Si falta `CAMPUSENROLL_CI_TOKEN`, el workflow falla al inicio con un error claro antes de intentar clonar repos privados.
+- Si falta `CAMPUSENROLL_CI_TOKEN`, el workflow muestra una advertencia y omite el smoke completo que depende de repos privados. Las validaciones estaticas del repo `campusenroll-ha` siguen ejecutandose.
 
 Nota local: el workflow vive en `.github/workflows/campusenroll-ci.yml` dentro del repo `campusenroll-ha`. Usa `docker compose config --quiet`, `gateway-smoke-ci.ps1` y k6 `smoke`. No usa `docker compose down -v`; al final solo detiene contenedores con `docker compose stop`.
 
