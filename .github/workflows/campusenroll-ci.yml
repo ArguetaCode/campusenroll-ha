@@ -32,17 +32,27 @@ jobs:
         with:
           path: campusenroll-ha
 
-      - name: Validate private repository token
+      - name: Check private repository token
+        id: ci-token
         shell: bash
         env:
           CI_REPOS_TOKEN: ${{ secrets.CAMPUSENROLL_CI_TOKEN }}
         run: |
           if [ -z "$CI_REPOS_TOKEN" ]; then
-            echo "::error::Missing CAMPUSENROLL_CI_TOKEN. Configure it with read access to student-service, course-service, billing-service, notification, and enrollment-service."
-            exit 1
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Missing CAMPUSENROLL_CI_TOKEN. Full Compose/Flyway/gateway/k6 smoke is skipped because private service repositories cannot be checked out."
+            {
+              echo "### CampusEnroll HA CI"
+              echo ""
+              echo "Full smoke was skipped because \`CAMPUSENROLL_CI_TOKEN\` is not configured."
+              echo "Static checks for this repository still run."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout student-service
+        if: steps.ci-token.outputs.available == 'true'
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/student-service
@@ -50,6 +60,7 @@ jobs:
           path: student-service
 
       - name: Checkout course-service
+        if: steps.ci-token.outputs.available == 'true'
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/course-service
@@ -57,6 +68,7 @@ jobs:
           path: course-service
 
       - name: Checkout billing-service
+        if: steps.ci-token.outputs.available == 'true'
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/billing-service
@@ -64,6 +76,7 @@ jobs:
           path: billing-service
 
       - name: Checkout notification
+        if: steps.ci-token.outputs.available == 'true'
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/notification
@@ -71,6 +84,7 @@ jobs:
           path: notification
 
       - name: Checkout enrollment-service
+        if: steps.ci-token.outputs.available == 'true'
         uses: actions/checkout@v4
         with:
           repository: ArguetaCode/enrollment-service
@@ -110,6 +124,7 @@ jobs:
           echo "Static guardrails passed."
 
       - name: Validate Docker Compose
+        if: steps.ci-token.outputs.available == 'true'
         run: |
           docker compose config --quiet
           docker compose --profile testing config --quiet
@@ -153,26 +168,31 @@ jobs:
           node --check tests/enrollment-flow-smoke.js
 
       - name: Prepare k6 artifacts directory
+        if: steps.ci-token.outputs.available == 'true'
         run: mkdir -p artifacts/k6
 
       - name: Start infra safely
+        if: steps.ci-token.outputs.available == 'true'
         shell: pwsh
         run: docker compose up -d campusenroll-postgres campusenroll-redis campusenroll-rabbitmq
 
       - name: Run Flyway migrations
+        if: steps.ci-token.outputs.available == 'true'
         shell: pwsh
         run: docker compose --profile db-migration run --rm campusenroll-flyway
 
       - name: Run gateway smoke CI
+        if: steps.ci-token.outputs.available == 'true'
         shell: pwsh
         run: ./scripts/gateway-smoke-ci.ps1 -SkipFlyway
 
       - name: Run k6 smoke profile
+        if: steps.ci-token.outputs.available == 'true'
         shell: pwsh
         run: ./scripts/k6-gateway-ci.ps1 -TestProfile smoke -SkipGatewayPrecheck
 
       - name: Upload k6 artifacts
-        if: always()
+        if: always() && steps.ci-token.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: campusenroll-k6-smoke
@@ -180,7 +200,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload smoke diagnostics artifacts
-        if: always()
+        if: always() && steps.ci-token.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: campusenroll-smoke-diagnostics
@@ -188,9 +208,9 @@ jobs:
           if-no-files-found: ignore
 
       - name: Show container status
-        if: always()
+        if: always() && steps.ci-token.outputs.available == 'true'
         run: docker compose ps
 
       - name: Stop containers without deleting volumes
-        if: always()
+        if: always() && steps.ci-token.outputs.available == 'true'
         run: docker compose stop
