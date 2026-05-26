@@ -110,8 +110,8 @@ jobs:
             exit 1
           fi
 
-          if grep -R -n -E "baselineOnMigrate[[:space:]]*=[[:space:]]*true" . --exclude-dir=.git; then
-            echo "::error::baselineOnMigrate=true is not allowed in the current project phase."
+          if grep -R -n -E "baselineOnMigrate[[:space:]]*=[[:space:]]*true" . --exclude-dir=.git --exclude="campusenroll-ci.yml"; then
+            echo "::error::Flyway baselineOnMigrate must not be enabled in the current project phase."
             exit 1
           fi
 
