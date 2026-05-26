@@ -4,6 +4,7 @@ param(
     [int]$ContainerWaitAttempts = 30,
     [int]$EndpointRetryAttempts = 8,
     [int]$EndpointTimeoutSeconds = 10,
+    [string]$SmokeArtifactsDir = "artifacts/smoke",
     [switch]$SkipFlyway
 )
 
@@ -49,9 +50,91 @@ function Invoke-FlywayMigrations {
     }
 }
 
+function Write-SmokeArtifact {
+    param(
+        [string]$FileName,
+        [scriptblock]$ContentScript
+    )
+
+    try {
+        New-Item -ItemType Directory -Path $SmokeArtifactsDir -Force | Out-Null
+        $path = Join-Path $SmokeArtifactsDir $FileName
+        $content = & $ContentScript
+        if ($null -eq $content) {
+            $content = ""
+        }
+        $content | Out-String | Set-Content -LiteralPath $path -Encoding UTF8
+        Write-Host "[OK]  Smoke diagnostic artifact written: $path" -ForegroundColor Green
+    } catch {
+        Write-Host "[WARNING] Could not write smoke diagnostic artifact '$FileName': $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
+function Write-SmokeDiagnosticsArtifacts {
+    Write-SmokeArtifact -FileName "compose-ps.txt" -ContentScript {
+        & docker compose -f $ComposeFile ps 2>&1
+    }
+
+    Write-SmokeArtifact -FileName "docker-compose.log" -ContentScript {
+        & docker compose -f $ComposeFile logs --tail 200 2>&1
+    }
+
+    Write-SmokeArtifact -FileName "gateway-health.txt" -ContentScript {
+        try {
+            $response = Invoke-WebRequest -Uri "$GatewayBaseUrl/health" -Method GET -UseBasicParsing -TimeoutSec 5
+            "GET $GatewayBaseUrl/health -> HTTP $($response.StatusCode)"
+            $response.Content
+        } catch {
+            "GET $GatewayBaseUrl/health failed: $($_.Exception.Message)"
+        }
+    }
+
+    Write-SmokeArtifact -FileName "service-health.txt" -ContentScript {
+        $healthEndpoints = @(
+            @{ Label = "student-service"; Url = "$GatewayBaseUrl/health/student-service" },
+            @{ Label = "course-service"; Url = "$GatewayBaseUrl/health/course-service" },
+            @{ Label = "billing-service"; Url = "$GatewayBaseUrl/health/billing-service" },
+            @{ Label = "notification-service"; Url = "$GatewayBaseUrl/health/notification-service" },
+            @{ Label = "enrollment-service"; Url = "$GatewayBaseUrl/health/enrollment-service" }
+        )
+
+        foreach ($endpoint in $healthEndpoints) {
+            try {
+                $response = Invoke-WebRequest -Uri $endpoint.Url -Method GET -UseBasicParsing -TimeoutSec 5
+                "GET $($endpoint.Url) [$($endpoint.Label)] -> HTTP $($response.StatusCode)"
+                $response.Content
+                ""
+            } catch {
+                "GET $($endpoint.Url) [$($endpoint.Label)] failed: $($_.Exception.Message)"
+                ""
+            }
+        }
+    }
+
+    Write-SmokeArtifact -FileName "docker-inspect-summary.txt" -ContentScript {
+        $containers = @(
+            "campusenroll-postgres",
+            "campusenroll-redis",
+            "campusenroll-rabbitmq",
+            "campusenroll-student-service",
+            "campusenroll-course-service",
+            "campusenroll-billing-service",
+            "campusenroll-notification-service",
+            "campusenroll-enrollment-service",
+            "campusenroll-api-gateway"
+        )
+
+        foreach ($container in $containers) {
+            & docker inspect --format "{{.Name}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} image={{.Config.Image}}" $container 2>&1
+        }
+    }
+}
+
 function Write-ComposeDiagnostics {
     Write-Host ""
     Write-Host "Diagnostics timestamp: $(Get-Date -Format o)" -ForegroundColor Yellow
+    Write-SmokeDiagnosticsArtifacts
+
     Write-Host ""
     Write-Host "Docker Compose status:" -ForegroundColor Yellow
     & docker compose -f $ComposeFile ps
@@ -91,6 +174,65 @@ function Write-ComposeDiagnostics {
         Write-Host "Last logs for ${service}:" -ForegroundColor Yellow
         & docker compose -f $ComposeFile logs --tail 80 $service
     }
+}
+
+function Test-ReadinessGate {
+    param(
+        [string]$ServiceName,
+        [string[]]$DockerArgs,
+        [string]$ExpectedOutput = "",
+        [int]$MaxAttempts = 15,
+        [int]$SleepSeconds = 2,
+        [scriptblock]$OnFailure
+    )
+
+    for ($i = 1; $i -le $MaxAttempts; $i++) {
+        $output = & docker @DockerArgs 2>&1
+        $exitCode = $LASTEXITCODE
+        $outputText = ($output | ForEach-Object { "$_" }) -join "`n"
+
+        $outputMatches = $true
+        if ($ExpectedOutput -ne "") {
+            $outputMatches = $outputText -match $ExpectedOutput
+        }
+
+        if ($exitCode -eq 0 -and $outputMatches) {
+            Write-Host "[OK]  $ServiceName readiness check passed" -ForegroundColor Green
+            return
+        }
+
+        Write-Host "[WARNING] $ServiceName readiness check attempt $i/$MaxAttempts failed: $outputText" -ForegroundColor Yellow
+
+        if ($i -eq $MaxAttempts) {
+            Write-Host "[ERROR] $ServiceName readiness check failed" -ForegroundColor Red
+            if ($OnFailure) {
+                & $OnFailure
+            }
+            throw "$ServiceName readiness check failed"
+        }
+
+        Start-Sleep -Seconds $SleepSeconds
+    }
+}
+
+function Test-InfrastructureReadiness {
+    Write-Step "Validate infrastructure readiness gates"
+
+    Test-ReadinessGate `
+        -ServiceName "PostgreSQL" `
+        -DockerArgs @("exec", "campusenroll-postgres", "pg_isready", "-U", "campus") `
+        -OnFailure { Write-ComposeDiagnostics }
+
+    Test-ReadinessGate `
+        -ServiceName "Redis" `
+        -DockerArgs @("exec", "campusenroll-redis", "redis-cli", "ping") `
+        -ExpectedOutput "PONG" `
+        -OnFailure { Write-ComposeDiagnostics }
+
+    Test-ReadinessGate `
+        -ServiceName "RabbitMQ" `
+        -DockerArgs @("exec", "campusenroll-rabbitmq", "rabbitmq-diagnostics", "ping") `
+        -OnFailure { Write-ComposeDiagnostics }
 }
 
 function Wait-ContainerHealthy {
@@ -339,6 +481,7 @@ if (-not (Test-Path $ComposeFile)) {
 
 Write-Step "Start infrastructure (non-destructive)"
 Invoke-Compose -ComposeArgs @("up", "-d", "campusenroll-postgres", "campusenroll-redis", "campusenroll-rabbitmq")
+Test-InfrastructureReadiness
 
 if (-not $SkipFlyway) {
     Write-Step "Run Flyway migrations (idempotent)"

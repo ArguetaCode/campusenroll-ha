@@ -123,6 +123,58 @@ function Test-HealthEndpoint {
     }
 }
 
+function Test-ReadinessGate {
+    param(
+        [string]$ServiceName,
+        [string[]]$DockerArgs,
+        [string]$ExpectedOutput = "",
+        [int]$MaxAttempts = 15,
+        [int]$SleepSeconds = 2
+    )
+
+    for ($i = 1; $i -le $MaxAttempts; $i++) {
+        $output = & docker @DockerArgs 2>&1
+        $exitCode = $LASTEXITCODE
+        $outputText = ($output | ForEach-Object { "$_" }) -join "`n"
+
+        $outputMatches = $true
+        if ($ExpectedOutput -ne "") {
+            $outputMatches = $outputText -match $ExpectedOutput
+        }
+
+        if ($exitCode -eq 0 -and $outputMatches) {
+            Write-Host "[OK]  $ServiceName readiness check passed" -ForegroundColor Green
+            return
+        }
+
+        Write-Host "[WARNING] $ServiceName readiness check attempt $i/$MaxAttempts failed: $outputText" -ForegroundColor Yellow
+
+        if ($i -eq $MaxAttempts) {
+            Write-Host "[ERROR] $ServiceName readiness check failed" -ForegroundColor Red
+            throw "$ServiceName readiness check failed"
+        }
+
+        Start-Sleep -Seconds $SleepSeconds
+    }
+}
+
+function Test-InfrastructureReadiness {
+    Write-Step "Validate infrastructure readiness gates"
+
+    Test-ReadinessGate `
+        -ServiceName "PostgreSQL" `
+        -DockerArgs @("exec", "campusenroll-postgres", "pg_isready", "-U", "campus")
+
+    Test-ReadinessGate `
+        -ServiceName "Redis" `
+        -DockerArgs @("exec", "campusenroll-redis", "redis-cli", "ping") `
+        -ExpectedOutput "PONG"
+
+    Test-ReadinessGate `
+        -ServiceName "RabbitMQ" `
+        -DockerArgs @("exec", "campusenroll-rabbitmq", "rabbitmq-diagnostics", "ping")
+}
+
 function Wait-ContainerHealthy {
     param([string]$ContainerName, [int]$MaxAttempts = 30)
     for ($i = 1; $i -le $MaxAttempts; $i++) {
@@ -161,6 +213,7 @@ if ($AllowDestructiveCleanup) {
 
 Write-Step "Start infrastructure (PostgreSQL, Redis, RabbitMQ)"
 Invoke-Compose -ComposeArgs @("up", "-d", "campusenroll-postgres", "campusenroll-redis", "campusenroll-rabbitmq")
+Test-InfrastructureReadiness
 
 Write-Step "Run Flyway migrations"
 Invoke-Compose -ComposeArgs @("--profile", "db-migration", "run", "--rm", "campusenroll-flyway")
