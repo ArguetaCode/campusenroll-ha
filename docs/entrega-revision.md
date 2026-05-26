@@ -500,11 +500,11 @@ erDiagram
 - `courses.course_code` unico.
 - `courses.code` unico.
 - `course_sections(course_id, section_code)` unico.
-- `enrollments(student_id, section_id)` unico.
+- `enrollments(student_id, section_id)` unico solo cuando la inscripcion esta activa (`PENDING_PAYMENT` o `CONFIRMED`); se permite reintentar despues de `PAYMENT_FAILED` o `CANCELLED`.
 - `notifications.event_id` unico.
 - Check `payments.amount > 0`.
 - Check de horario `section_schedules.start_time < section_schedules.end_time`.
-- Check de capacidad para que reservados + confirmados no superen la capacidad.
+- Check de capacidad para que `reserved_seats` y `confirmed_seats` sean no negativos y su suma no supere `max_capacity`.
 - Indices en email, estados, cursos, secciones, inscripciones por estudiante/seccion, pagos por estudiante/enrollment y notificaciones por estudiante/evento.
 
 ## 11. Estrategia de consistencia
