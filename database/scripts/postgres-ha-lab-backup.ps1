@@ -14,7 +14,10 @@ $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $outputFile = Join-Path $OutputDir ("{0}_{1}.dump" -f $Database, $timestamp)
 
 Write-Host "CampusEnroll PostgreSQL HA Lab - backup" -ForegroundColor Yellow
+Write-Host "LAB ONLY / NOT FOR PRODUCTION."
 Write-Host "Source container: postgres-primary-lab"
+Write-Host "Database:         $Database"
+Write-Host "User:             $User"
 Write-Host "Output file:      $outputFile"
 
 $containerDump = "/tmp/${Database}_${timestamp}.dump"

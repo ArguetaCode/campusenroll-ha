@@ -32,6 +32,7 @@ function Invoke-Psql {
 }
 
 Write-Host "CampusEnroll PostgreSQL HA Lab - replication check" -ForegroundColor Yellow
+Write-Host "LAB ONLY / NOT FOR PRODUCTION."
 Write-Host "Database: $Database"
 Write-Host "User:     $User"
 
@@ -55,7 +56,7 @@ Invoke-Psql -Container "postgres-primary-lab" -Sql "SELECT application_name || '
 
 if (-not $SkipBasicReplicationTest) {
     Write-Host ""
-    Write-Host "Running small lab-only replication test. This creates rows in ha_lab.replication_probe." -ForegroundColor Yellow
+    Write-Warning "Running small lab-only replication test. This creates one row in ha_lab.replication_probe."
     $probeId = [Guid]::NewGuid().ToString()
     $createSql = "CREATE SCHEMA IF NOT EXISTS ha_lab; CREATE TABLE IF NOT EXISTS ha_lab.replication_probe (id text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now()); INSERT INTO ha_lab.replication_probe(id) VALUES ('$probeId');"
     Invoke-Psql -Container "postgres-primary-lab" -Sql $createSql | Out-Null

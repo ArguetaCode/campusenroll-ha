@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "CampusEnroll PostgreSQL HA Lab - status" -ForegroundColor Yellow
+Write-Host "LAB ONLY / NOT FOR PRODUCTION. Read-only Docker inspection."
 foreach ($container in @("postgres-primary-lab", "postgres-replica-lab")) {
     $status = docker inspect --format "{{.Name}} -> status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}" $container 2>$null
     if ($LASTEXITCODE -eq 0) {

@@ -10,11 +10,20 @@ if (-not $Database) { $Database = "campusenroll_lab" }
 if (-not $User) { $User = "campus_lab" }
 
 if (-not $ConfirmPromoteLab) {
-    throw "Replica promotion changes the lab topology and stops postgres-primary-lab. Re-run with -ConfirmPromoteLab only for isolated lab testing."
+    throw "LAB ONLY / NOT FOR PRODUCTION: replica promotion changes the lab topology and stops postgres-primary-lab. Re-run with -ConfirmPromoteLab only for isolated lab testing."
 }
 
 Write-Host "CampusEnroll PostgreSQL HA Lab - promote replica" -ForegroundColor Yellow
-Write-Warning "This is destructive to the lab replication topology only. It does not delete volumes and does not touch campusenroll-postgres."
+Write-Warning "LAB ONLY / NOT FOR PRODUCTION. This is destructive to the lab replication topology only."
+Write-Warning "This stops postgres-primary-lab, promotes postgres-replica-lab, and leaves the old primary/replica topology broken."
+Write-Host "Target primary container to stop: postgres-primary-lab"
+Write-Host "Target replica container to promote: postgres-replica-lab"
+Write-Host "Protected non-lab container: campusenroll-postgres"
+
+$replicaState = docker inspect --format "{{.State.Status}}" postgres-replica-lab 2>$null
+if ($LASTEXITCODE -ne 0 -or $replicaState -ne "running") {
+    throw "postgres-replica-lab must be running before promotion. Refusing to stop postgres-primary-lab."
+}
 
 $primaryState = docker inspect --format "{{.State.Status}}" postgres-primary-lab 2>$null
 if ($LASTEXITCODE -eq 0 -and $primaryState -eq "running") {

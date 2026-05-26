@@ -2,6 +2,8 @@
 
 This guide describes the isolated PostgreSQL primary/replica laboratory for CampusEnroll-HA. It is not production HA and it does not replace the current local database container `campusenroll-postgres`.
 
+Every script in this guide is lab-only. Do not use these commands as production HA operations.
+
 ## Scope
 
 Implemented for lab:
@@ -32,6 +34,8 @@ Not implemented:
 - Do not point write-heavy services at the replica.
 - Do not treat promotion as reversible. After promotion, rebuild replication topology.
 - Cleanup of lab volumes, if ever added, must require an explicit `-ConfirmDestroyLab`-style flag and must only target lab volumes.
+- Scripts that remove containers or volumes print the allowlisted lab resources before acting.
+- `postgres-ha-lab-promote-replica.ps1` refuses to stop the primary if `postgres-replica-lab` is not running.
 
 ## Lab Variables
 
@@ -163,6 +167,11 @@ powershell -ExecutionPolicy Bypass -File .\database\scripts\postgres-ha-lab-up.p
 ```
 
 The reset script removes only allowlisted lab containers and volumes. It does not use `docker compose down -v` and does not target `campusenroll-postgres` or `campusenroll-ha_campusenroll_pg_data`.
+
+Resources removed by reset/rebuild scripts are limited to:
+
+- Containers: `postgres-primary-lab`, `postgres-replica-lab`, `postgres-restore-drill-lab`.
+- Volumes: `campusenroll_postgres_primary_lab_data`, `campusenroll_postgres_replica_lab_data`, `campusenroll_postgres_primary_lab_wal_archive`.
 
 ## Post-Promotion Recovery
 

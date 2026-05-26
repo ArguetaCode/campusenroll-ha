@@ -15,6 +15,12 @@ $outputFile = Join-Path $OutputDir ("{0}_{1}_{2}.dump" -f $env:POSTGRES_DB, $sch
 
 $containerExists = docker ps --format '{{.Names}}' | Select-String -Pattern '^campusenroll-postgres$'
 
+Write-Host "CampusEnroll database backup" -ForegroundColor Yellow
+Write-Host "This is a logical backup helper, not a production backup system."
+Write-Host "Database: ${env:POSTGRES_DB}"
+Write-Host "Schema:   $schema"
+Write-Host "Output:   $outputFile"
+
 if ($containerExists) {
     Write-Host "[info] using docker exec against campusenroll-postgres"
     $env:PGPASSWORD = $env:POSTGRES_PASSWORD

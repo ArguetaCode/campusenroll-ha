@@ -1,3 +1,5 @@
+# PostgreSQL HA Lab only. Not production HA.
+# This compose file uses isolated lab containers, volumes, ports, and network.
 services:
   postgres-primary-lab:
     image: postgres:16
@@ -60,6 +62,7 @@ services:
             sleep 2
           done
           echo "[replica-lab] bootstrapping with pg_basebackup"
+          echo "[replica-lab] LAB ONLY: clearing replica PGDATA volume before base backup"
           rm -rf "$$PGDATA"/*
           pg_basebackup \
             -h postgres-primary-lab \

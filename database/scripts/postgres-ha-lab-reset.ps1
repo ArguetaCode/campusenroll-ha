@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not $ConfirmDestroyLab) {
-    throw "This destroys only PostgreSQL HA lab containers/volumes. Re-run with -ConfirmDestroyLab to reset the lab topology."
+    throw "LAB ONLY / NOT FOR PRODUCTION: this reset destroys PostgreSQL HA lab containers and lab volumes. Re-run with -ConfirmDestroyLab only for an isolated lab reset."
 }
 
 $labContainers = @(
@@ -24,7 +24,15 @@ $protectedContainers = @("campusenroll-postgres")
 $protectedVolumes = @("campusenroll-ha_campusenroll_pg_data", "campusenroll_pg_data")
 
 Write-Host "CampusEnroll PostgreSQL HA Lab - reset" -ForegroundColor Yellow
-Write-Warning "This removes lab containers and lab volumes only. It does not use docker compose down -v."
+Write-Warning "LAB ONLY / NOT FOR PRODUCTION. This removes lab containers and lab volumes only."
+Write-Warning "Lab data in the listed volumes will be lost. This does not use docker compose down -v."
+Write-Host ""
+Write-Host "Allowlisted lab containers to remove:"
+$labContainers | ForEach-Object { Write-Host "  - $_" }
+Write-Host "Allowlisted lab volumes to remove:"
+$labVolumes | ForEach-Object { Write-Host "  - $_" }
+Write-Host "Protected non-lab resources:"
+($protectedContainers + $protectedVolumes) | ForEach-Object { Write-Host "  - $_" }
 
 foreach ($container in $protectedContainers) {
     if ($labContainers -contains $container) {
@@ -35,6 +43,18 @@ foreach ($container in $protectedContainers) {
 foreach ($volume in $protectedVolumes) {
     if ($labVolumes -contains $volume) {
         throw "Safety check failed: lab volume allowlist includes protected volume $volume."
+    }
+}
+
+foreach ($container in $labContainers) {
+    if ($container -notmatch "-lab$") {
+        throw "Safety check failed: lab container '$container' does not end with '-lab'."
+    }
+}
+
+foreach ($volume in $labVolumes) {
+    if ($volume -notmatch "^campusenroll_postgres_.*_lab") {
+        throw "Safety check failed: lab volume '$volume' does not match the HA lab naming convention."
     }
 }
 

@@ -39,6 +39,8 @@ $env:POSTGRES_PASSWORD='***'
 
 `-ConfirmRestore` is required because restore is destructive for the target database: the script uses `pg_restore --clean --if-exists`. Use it only against an isolated restore target or an explicitly approved non-production database.
 
+The PowerShell restore script prints the target mode, database, user, and backup file before restoring. It is still not a production restore automation tool.
+
 ## Restore Test Procedure
 1. Create backup from current state.
 2. Restore into an isolated PostgreSQL instance (recommended) or non-production environment.
@@ -125,6 +127,8 @@ powershell -ExecutionPolicy Bypass -File .\database\scripts\postgres-ha-lab-rest
 ```
 
 The restore drill uses an ephemeral container and does not restore into `campusenroll-postgres`, `postgres-primary-lab`, or `postgres-replica-lab`.
+
+HA lab scripts are explicitly marked `LAB ONLY / NOT FOR PRODUCTION`. Destructive lab scripts require confirmation flags and print the exact containers/volumes they can touch.
 
 After a lab promotion, use the post-promotion rebuild script if you need to preserve the promoted lab data before recreating primary/replica:
 

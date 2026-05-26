@@ -19,8 +19,13 @@ if (-not (Test-Path -LiteralPath $ComposeFile)) {
 
 Write-Host "CampusEnroll PostgreSQL HA Lab - startup" -ForegroundColor Yellow
 Write-Host "Compose file: $ComposeFile"
+Write-Host "LAB ONLY / NOT FOR PRODUCTION."
 Write-Host "This starts isolated lab containers only: postgres-primary-lab and postgres-replica-lab."
 Write-Host "It does not run down -v and does not touch campusenroll-postgres or campusenroll_pg_data."
+
+if ($AllowStartAfterPromotion) {
+    Write-Warning "AllowStartAfterPromotion was provided. This can create split-brain in the lab if used after a replica promotion."
+}
 
 $replicaRunning = docker inspect --format "{{.State.Status}}" postgres-replica-lab 2>$null
 if ($LASTEXITCODE -eq 0 -and $replicaRunning -eq "running" -and -not $AllowStartAfterPromotion) {

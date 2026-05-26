@@ -12,7 +12,7 @@ if (-not $Database) { $Database = "campusenroll_lab" }
 if (-not $User) { $User = "campus_lab" }
 
 if (-not $ConfirmDestroyLab) {
-    throw "This rebuilds the HA lab after promotion by removing lab-only containers/volumes. Re-run with -ConfirmDestroyLab to proceed."
+    throw "LAB ONLY / NOT FOR PRODUCTION: this rebuild removes PostgreSQL HA lab containers and lab volumes. Re-run with -ConfirmDestroyLab only for an isolated lab rebuild."
 }
 
 if (-not (Test-Path -LiteralPath $ComposeFile)) {
@@ -37,6 +37,18 @@ foreach ($container in $protectedContainers) {
 foreach ($volume in $protectedVolumes) {
     if ($labVolumes -contains $volume) {
         throw "Safety check failed: lab volume allowlist includes protected volume $volume."
+    }
+}
+
+foreach ($container in $labContainers) {
+    if ($container -notmatch "-lab$") {
+        throw "Safety check failed: lab container '$container' does not end with '-lab'."
+    }
+}
+
+foreach ($volume in $labVolumes) {
+    if ($volume -notmatch "^campusenroll_postgres_.*_lab") {
+        throw "Safety check failed: lab volume '$volume' does not match the HA lab naming convention."
     }
 }
 
@@ -74,7 +86,15 @@ function Remove-LabContainersAndVolumes {
 }
 
 Write-Host "CampusEnroll PostgreSQL HA Lab - rebuild after promotion" -ForegroundColor Yellow
-Write-Warning "This affects only PostgreSQL HA lab containers/volumes. It does not use docker compose down -v."
+Write-Warning "LAB ONLY / NOT FOR PRODUCTION. This affects only PostgreSQL HA lab containers/volumes."
+Write-Warning "Lab volumes will be removed after an optional backup of the promoted replica. This does not use docker compose down -v."
+Write-Host ""
+Write-Host "Allowlisted lab containers to remove:"
+$labContainers | ForEach-Object { Write-Host "  - $_" }
+Write-Host "Allowlisted lab volumes to remove:"
+$labVolumes | ForEach-Object { Write-Host "  - $_" }
+Write-Host "Protected non-lab resources:"
+($protectedContainers + $protectedVolumes) | ForEach-Object { Write-Host "  - $_" }
 
 $promotedReplicaExists = docker ps --format "{{.Names}}" | Where-Object { $_ -eq "postgres-replica-lab" }
 $backupFile = $null
@@ -107,7 +127,7 @@ if ($promotedReplicaExists) {
 
     docker exec postgres-replica-lab rm -f $containerDump | Out-Null
 } else {
-    Write-Warning "postgres-replica-lab is not running. Rebuilding an empty fresh lab topology."
+    Write-Warning "postgres-replica-lab is not running. No promoted data can be backed up; rebuilding an empty fresh lab topology."
 }
 
 Remove-LabContainersAndVolumes

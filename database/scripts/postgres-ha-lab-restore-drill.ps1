@@ -18,21 +18,32 @@ if (-not (Test-Path -LiteralPath $BackupFile)) {
 }
 
 if (-not $ConfirmRestoreDrill) {
-    throw "Restore drill creates an ephemeral lab container and restores the dump there. Re-run with -ConfirmRestoreDrill to proceed."
+    throw "LAB ONLY / NOT FOR PRODUCTION: restore drill creates an ephemeral lab container and restores the dump there. Re-run with -ConfirmRestoreDrill to proceed."
 }
 
 $restoreContainer = "postgres-restore-drill-lab"
+$labNetwork = "campusenroll_postgres_ha_lab_net"
 $existing = docker ps -a --format "{{.Names}}" | Where-Object { $_ -eq $restoreContainer }
 if ($existing) {
     throw "Container $restoreContainer already exists. Remove it manually only if it is from a previous restore drill."
 }
 
+$networkExists = docker network ls --format "{{.Name}}" | Where-Object { $_ -eq $labNetwork }
+if (-not $networkExists) {
+    throw "Lab network $labNetwork was not found. Start the HA lab first with postgres-ha-lab-up.ps1."
+}
+
 Write-Host "CampusEnroll PostgreSQL HA Lab - restore drill" -ForegroundColor Yellow
-Write-Host "This uses an ephemeral container with no named volume and does not touch primary/replica lab data."
+Write-Warning "LAB ONLY / NOT FOR PRODUCTION. This validates a dump in an ephemeral container."
+Write-Host "Backup file:        $BackupFile"
+Write-Host "Ephemeral container: $restoreContainer"
+Write-Host "Network:            $labNetwork"
+Write-Host "Named volumes:      none"
+Write-Host "Protected containers: campusenroll-postgres, postgres-primary-lab, postgres-replica-lab"
 
 docker run -d --rm `
     --name $restoreContainer `
-    --network campusenroll_postgres_ha_lab_net `
+    --network $labNetwork `
     -e POSTGRES_DB=$Database `
     -e POSTGRES_USER=$User `
     -e POSTGRES_PASSWORD=$Password `
