@@ -19,7 +19,7 @@ Si existe actualmente:
 Todavia no existe:
 
 - Alta disponibilidad real de produccion.
-- Kubernetes, Docker Swarm, Patroni o failover automatico.
+- Kubernetes, Patroni o failover automatico de base de datos.
 - Performance testing real o pruebas de 50,000 peticiones.
 - Separacion database-per-service.
 - Hardening productivo de secretos, TLS, monitoreo y alertas.
@@ -29,6 +29,8 @@ Documentos operativos nuevos:
 - `docs/operational-baseline.md`: baseline seguro, puertos, health checks, Flyway y comandos peligrosos.
 - `docs/demo-local.md`: flujo corto de demo local por gateway con pago aprobado, pago fallido y notificaciones.
 - `docs/lan-lab-runbook.md`: guia por nodos LAN sin Kubernetes ni Docker Swarm.
+- `docs/swarm-4-node-ha.md`: primera capa de HA con Docker Swarm para microservicios y gateway.
+- `docs/swarm-failover-test-plan.md`: plan de prueba de reprogramacion de replicas tras falla o drain de nodo.
 - `docs/postgresql-ha-lab.md`: guia inicial de primaria/replica, streaming replication, WAL/PITR y promocion manual.
 - `docs/postgresql-ha-lab-post-promotion.md`: flujo para reconstruir el laboratorio despues de promover una replica.
 - `docs/database-backup-restore.md`: estrategia de backup/restore, retencion y restore drill.

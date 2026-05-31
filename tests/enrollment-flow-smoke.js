@@ -49,11 +49,16 @@ export function setup() {
 }
 
 function jsonHeaders(extra = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  Object.keys(extra).forEach((key) => {
+    headers[key] = extra[key];
+  });
+
   return {
-    headers: {
-      "Content-Type": "application/json",
-      ...extra,
-    },
+    headers,
   };
 }
 
