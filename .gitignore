@@ -16,6 +16,7 @@ logs/
 
 # k6 runtime artifacts
 /artifacts/k6/*.json
+/artifacts/smoke/*.txt
 
 # OS files
 .DS_Store*.class

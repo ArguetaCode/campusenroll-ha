@@ -9,11 +9,26 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:COMPOSE_IGNORE_ORPHANS = "true"
 
 function Write-Step {
     param([string]$Message)
     Write-Host ""
     Write-Host "==> $Message" -ForegroundColor Cyan
+}
+
+function Set-GatewayPortFromBaseUrl {
+    param([string]$BaseUrl)
+
+    try {
+        $uri = [System.Uri]$BaseUrl
+        if ($uri.Port -gt 0 -and $uri.Port -ne 80 -and $uri.Port -ne 443) {
+            $env:GATEWAY_PORT = [string]$uri.Port
+            Write-Host "[OK]  Compose GATEWAY_PORT set to $($env:GATEWAY_PORT) from GatewayBaseUrl" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "[WARNING] Could not parse GatewayBaseUrl '$BaseUrl' to derive GATEWAY_PORT." -ForegroundColor Yellow
+    }
 }
 
 function Invoke-Compose {
@@ -29,8 +44,14 @@ function Invoke-Compose {
 
 function Invoke-FlywayMigrations {
     $composeArgs = @("--profile", "db-migration", "run", "--rm", "campusenroll-flyway")
-    $output = & docker compose -f $ComposeFile @composeArgs 2>&1
-    $exitCode = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & docker compose -f $ComposeFile @composeArgs 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
 
     if ($output) {
         $output | ForEach-Object { Write-Host $_ }
@@ -411,7 +432,7 @@ function Test-PaymentWriteReadiness {
                 return @{
                     studentId = $student.id
                     enrollmentId = $enrollment.id
-                    payment = @{ paymentId = $enrollment.paymentReference }
+                    paymentId = $enrollment.paymentReference
                 }
             }
 
@@ -441,7 +462,7 @@ function Test-PaymentNotificationReadiness {
 
     $paymentResult = Test-PaymentWriteReadiness -BaseUrl $BaseUrl -Attempts $Attempts
     $studentId = $paymentResult.studentId
-    $paymentId = $paymentResult.payment.paymentId
+    $paymentId = $paymentResult.paymentId
     $url = "$BaseUrl/students/$studentId/notifications"
 
     for ($i = 1; $i -le $Attempts; $i++) {
@@ -474,6 +495,7 @@ function Test-PaymentNotificationReadiness {
 Write-Host "CampusEnroll-HA Gateway Smoke Test (CI Mode)" -ForegroundColor Yellow
 Write-Host "Compose file: $ComposeFile"
 Write-Host "Gateway URL:  $GatewayBaseUrl"
+Set-GatewayPortFromBaseUrl -BaseUrl $GatewayBaseUrl
 
 if (-not (Test-Path $ComposeFile)) {
     throw "Compose file not found: $ComposeFile"
@@ -499,6 +521,9 @@ Wait-ContainerHealthy -ContainerName "campusenroll-course-service" -MaxAttempts 
 Wait-ContainerHealthy -ContainerName "campusenroll-billing-service" -MaxAttempts $ContainerWaitAttempts
 Wait-ContainerHealthy -ContainerName "campusenroll-notification-service" -MaxAttempts $ContainerWaitAttempts
 Wait-ContainerHealthy -ContainerName "campusenroll-enrollment-service" -MaxAttempts $ContainerWaitAttempts
+
+Write-Step "Refresh gateway upstream DNS (non-destructive restart)"
+Invoke-Compose -ComposeArgs @("restart", "campusenroll-api-gateway")
 Wait-ContainerHealthy -ContainerName "campusenroll-api-gateway" -MaxAttempts $ContainerWaitAttempts
 
 Write-Step "Validate gateway health endpoints"

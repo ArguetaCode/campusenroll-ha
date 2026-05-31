@@ -288,6 +288,16 @@ curl http://localhost:8080/notifications
 curl http://localhost:8080/api/enrollments
 ```
 
+Si `8080` ya esta ocupado por otro proyecto local, usar un puerto alterno sin cambiar la configuracion interna del
+gateway:
+
+```powershell
+$env:GATEWAY_PORT="18080"
+docker compose up -d campusenroll-api-gateway campusenroll-nginx-exporter
+powershell -ExecutionPolicy Bypass -File .\scripts\gateway-smoke-ci.ps1 -SkipFlyway -GatewayBaseUrl http://localhost:18080
+powershell -ExecutionPolicy Bypass -File .\scripts\k6-gateway-ci.ps1 -TestProfile smoke -GatewayHostBaseUrl http://localhost:18080 -K6Script enrollment-flow-smoke.js -SkipGatewayPrecheck
+```
+
 ## Configuracion de base de datos
 
 - `spring.jpa.hibernate.ddl-auto` queda en modo seguro `validate` en los 5 servicios.

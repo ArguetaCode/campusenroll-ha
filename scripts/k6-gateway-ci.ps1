@@ -16,11 +16,26 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:COMPOSE_IGNORE_ORPHANS = "true"
 
 function Write-Step {
     param([string]$Message)
     Write-Host ""
     Write-Host "==> $Message" -ForegroundColor Cyan
+}
+
+function Set-GatewayPortFromBaseUrl {
+    param([string]$BaseUrl)
+
+    try {
+        $uri = [System.Uri]$BaseUrl
+        if ($uri.Port -gt 0 -and $uri.Port -ne 80 -and $uri.Port -ne 443) {
+            $env:GATEWAY_PORT = [string]$uri.Port
+            Write-Host "[OK]  Compose GATEWAY_PORT set to $($env:GATEWAY_PORT) from GatewayHostBaseUrl" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "[WARNING] Could not parse GatewayHostBaseUrl '$BaseUrl' to derive GATEWAY_PORT." -ForegroundColor Yellow
+    }
 }
 
 function Invoke-Compose {
@@ -244,6 +259,7 @@ Write-Host "Host URL:     $GatewayHostBaseUrl"
 Write-Host "Profile:      $TestProfile"
 Write-Host "Script:       $K6Script"
 Write-Host "Artifacts:    $ArtifactsDir"
+Set-GatewayPortFromBaseUrl -BaseUrl $GatewayHostBaseUrl
 Write-Warning "k6 smoke scripts create test data in the configured environment. Use only disposable/local/CI databases."
 Write-Host "Allowed k6 profile in current project phase: smoke" -ForegroundColor Yellow
 
@@ -289,7 +305,7 @@ if (-not $SkipGatewayPrecheck) {
     Write-Step "Run gateway smoke precheck (non-destructive)"
     $powerShellExe = (Get-Process -Id $PID).Path
     $gatewaySmokeScript = Join-Path $PSScriptRoot "gateway-smoke-ci.ps1"
-    & $powerShellExe -NoProfile -File $gatewaySmokeScript -ComposeFile $ComposeFile -GatewayBaseUrl "http://localhost:8080"
+    & $powerShellExe -NoProfile -File $gatewaySmokeScript -ComposeFile $ComposeFile -GatewayBaseUrl $GatewayHostBaseUrl
     if ($LASTEXITCODE -ne 0) {
         throw "gateway-smoke-ci.ps1 failed"
     }
