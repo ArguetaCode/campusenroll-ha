@@ -12,7 +12,10 @@ param(
     [string]$GatewayHostBaseUrl = "http://localhost:8080",
     [int]$ReadinessRetryAttempts = 12,
     [string]$K6Script = "load-test.js",
-    [string]$ArtifactsDir = "artifacts/k6"
+    [string]$ArtifactsDir = "artifacts/k6",
+    [switch]$SwarmMode,
+    [string]$StackName = "campusenroll",
+    [string]$K6Image = "grafana/k6:0.49.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,7 +49,23 @@ function Invoke-Compose {
     }
 }
 
+function Convert-ToContainerReachableBaseUrl {
+    param([string]$BaseUrl)
+
+    $uri = [System.Uri]$BaseUrl
+    $builder = [System.UriBuilder]::new($uri)
+    if ($builder.Host -in @("localhost", "127.0.0.1")) {
+        $builder.Host = "host.docker.internal"
+    }
+    return $builder.Uri.AbsoluteUri.TrimEnd("/")
+}
+
 function Write-ComposeDiagnostics {
+    if ($SwarmMode) {
+        Write-SwarmDiagnostics
+        return
+    }
+
     Write-Host ""
     Write-Host "Diagnostics timestamp: $(Get-Date -Format o)" -ForegroundColor Yellow
     Write-Host ""
@@ -87,6 +106,89 @@ function Write-ComposeDiagnostics {
         Write-Host ""
         Write-Host "Last logs for ${service}:" -ForegroundColor Yellow
         & docker compose -f $ComposeFile logs --tail 80 $service
+    }
+}
+
+function Write-SwarmDiagnostics {
+    Write-Host ""
+    Write-Host "Diagnostics timestamp: $(Get-Date -Format o)" -ForegroundColor Yellow
+
+    Write-Host ""
+    Write-Host "Docker Swarm nodes:" -ForegroundColor Yellow
+    & docker node ls
+
+    Write-Host ""
+    Write-Host "Docker Swarm services:" -ForegroundColor Yellow
+    & docker service ls
+
+    Write-Host ""
+    Write-Host "Stack services:" -ForegroundColor Yellow
+    & docker stack services $StackName
+
+    Write-Host ""
+    Write-Host "Stack tasks:" -ForegroundColor Yellow
+    & docker stack ps $StackName
+
+    $diagnosticServices = @(
+        "${StackName}_api-gateway",
+        "${StackName}_billing-service",
+        "${StackName}_notification-service",
+        "${StackName}_enrollment-service"
+    )
+
+    foreach ($service in $diagnosticServices) {
+        Write-Host ""
+        Write-Host "Last logs for ${service}:" -ForegroundColor Yellow
+        & docker service logs --tail 80 $service
+    }
+}
+
+function Invoke-K6DockerRun {
+    param(
+        [string]$ContainerGatewayBaseUrl,
+        [string]$SummaryFileInContainer,
+        [string]$ResultsFileInContainer,
+        [string]$RunId
+    )
+
+    $testsPath = Join-Path $artifactRoot "tests"
+    $runArgs = @(
+        "run", "--rm",
+        "--add-host", "host.docker.internal:host-gateway",
+        "-v", "${testsPath}:/scripts:ro",
+        "-v", "${hostArtifactsDir}:/artifacts",
+        "-e", "GATEWAY_BASE_URL=$ContainerGatewayBaseUrl",
+        "-e", "TEST_PROFILE=$normalizedTestProfile",
+        "-e", "K6_IDEMPOTENCY_KEY_PREFIX=k6-$normalizedTestProfile-$RunId"
+    )
+
+    if ($K6ThresholdFailureRate -ne "") {
+        $runArgs += @("-e", "K6_THRESHOLD_FAILURE_RATE=$K6ThresholdFailureRate")
+    }
+
+    if ($K6ThresholdP95Duration -ne "") {
+        $runArgs += @("-e", "K6_THRESHOLD_P95_DURATION=$K6ThresholdP95Duration")
+    }
+
+    if ($K6ThresholdChecksRate -ne "") {
+        $runArgs += @("-e", "K6_THRESHOLD_CHECKS_RATE=$K6ThresholdChecksRate")
+    }
+
+    if ($IncludeNotificationCheck) {
+        $runArgs += @("-e", "INCLUDE_NOTIFICATION_CHECK=true")
+    }
+
+    $runArgs += @(
+        $K6Image,
+        "run",
+        "--summary-export", $SummaryFileInContainer,
+        "--out", "json=$ResultsFileInContainer",
+        "/scripts/$K6Script"
+    )
+
+    & docker @runArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker run k6 failed: $($runArgs -join ' ')"
     }
 }
 
@@ -259,6 +361,7 @@ Write-Host "Host URL:     $GatewayHostBaseUrl"
 Write-Host "Profile:      $TestProfile"
 Write-Host "Script:       $K6Script"
 Write-Host "Artifacts:    $ArtifactsDir"
+Write-Host "Swarm mode:   $SwarmMode"
 Set-GatewayPortFromBaseUrl -BaseUrl $GatewayHostBaseUrl
 Write-Warning "k6 smoke scripts create test data in the configured environment. Use only disposable/local/CI databases."
 Write-Host "Allowed k6 profile in current project phase: smoke" -ForegroundColor Yellow
@@ -287,7 +390,7 @@ if ($K6Script -eq "enrollment-flow-smoke.js") {
     Write-Warning "load-test.js creates real test payment rows for smoke validation."
 }
 
-if (-not (Test-Path $ComposeFile)) {
+if (-not $SwarmMode -and -not (Test-Path $ComposeFile)) {
     throw "Compose file not found: $ComposeFile"
 }
 
@@ -305,7 +408,11 @@ if (-not $SkipGatewayPrecheck) {
     Write-Step "Run gateway smoke precheck (non-destructive)"
     $powerShellExe = (Get-Process -Id $PID).Path
     $gatewaySmokeScript = Join-Path $PSScriptRoot "gateway-smoke-ci.ps1"
-    & $powerShellExe -NoProfile -File $gatewaySmokeScript -ComposeFile $ComposeFile -GatewayBaseUrl $GatewayHostBaseUrl
+    if ($SwarmMode) {
+        & $powerShellExe -NoProfile -File $gatewaySmokeScript -GatewayBaseUrl $GatewayHostBaseUrl -SwarmMode -StackName $StackName
+    } else {
+        & $powerShellExe -NoProfile -File $gatewaySmokeScript -ComposeFile $ComposeFile -GatewayBaseUrl $GatewayHostBaseUrl
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "gateway-smoke-ci.ps1 failed"
     }
@@ -333,56 +440,61 @@ Write-Step "Run k6 against gateway"
 $summaryFileInContainer = "/artifacts/summary-$runId.json"
 $resultsFileInContainer = "/artifacts/results-$runId.json"
 
-$runArgs = @(
-    "--profile", "testing", "run", "--rm"
-)
-
-if ($IsLinux) {
-    $hostUid = (& id -u).Trim()
-    if ($LASTEXITCODE -ne 0 -or $hostUid -eq "") {
-        throw "Unable to resolve host UID for k6 artifact ownership."
-    }
-
-    $hostGid = (& id -g).Trim()
-    if ($LASTEXITCODE -ne 0 -or $hostGid -eq "") {
-        throw "Unable to resolve host GID for k6 artifact ownership."
-    }
-
-    $runArgs += @("--user", "${hostUid}:${hostGid}")
-    Write-Host "[OK]  k6 container will write artifacts as host user ${hostUid}:${hostGid}" -ForegroundColor Green
-}
-
-$runArgs += @(
-    "-e", "GATEWAY_BASE_URL=$GatewayBaseUrl",
-    "-e", "TEST_PROFILE=$normalizedTestProfile",
-    "-e", "K6_IDEMPOTENCY_KEY_PREFIX=k6-$normalizedTestProfile-$runId",
-    "k6", "run",
-    "--summary-export", $summaryFileInContainer,
-    "--out", "json=$resultsFileInContainer"
-)
-
-if ($K6ThresholdFailureRate -ne "") {
-    $runArgs += @("-e", "K6_THRESHOLD_FAILURE_RATE=$K6ThresholdFailureRate")
-}
-
-if ($K6ThresholdP95Duration -ne "") {
-    $runArgs += @("-e", "K6_THRESHOLD_P95_DURATION=$K6ThresholdP95Duration")
-}
-
-if ($K6ThresholdChecksRate -ne "") {
-    $runArgs += @("-e", "K6_THRESHOLD_CHECKS_RATE=$K6ThresholdChecksRate")
-}
-
-if ($IncludeNotificationCheck) {
-    $runArgs += @("-e", "INCLUDE_NOTIFICATION_CHECK=true")
-}
-
-$runArgs += @("/scripts/$K6Script")
-
 $k6RunSucceeded = $true
 $k6RunError = $null
 try {
-    Invoke-Compose -ComposeArgs $runArgs
+    if ($SwarmMode) {
+        $containerGatewayBaseUrl = Convert-ToContainerReachableBaseUrl -BaseUrl $GatewayHostBaseUrl
+        Write-Host "[OK]  Swarm mode k6 will target $containerGatewayBaseUrl from inside the container" -ForegroundColor Green
+        Invoke-K6DockerRun -ContainerGatewayBaseUrl $containerGatewayBaseUrl -SummaryFileInContainer $summaryFileInContainer -ResultsFileInContainer $resultsFileInContainer -RunId $runId
+    } else {
+        $runArgs = @(
+            "--profile", "testing", "run", "--rm"
+        )
+
+        if ($IsLinux) {
+            $hostUid = (& id -u).Trim()
+            if ($LASTEXITCODE -ne 0 -or $hostUid -eq "") {
+                throw "Unable to resolve host UID for k6 artifact ownership."
+            }
+
+            $hostGid = (& id -g).Trim()
+            if ($LASTEXITCODE -ne 0 -or $hostGid -eq "") {
+                throw "Unable to resolve host GID for k6 artifact ownership."
+            }
+
+            $runArgs += @("--user", "${hostUid}:${hostGid}")
+            Write-Host "[OK]  k6 container will write artifacts as host user ${hostUid}:${hostGid}" -ForegroundColor Green
+        }
+
+        $runArgs += @(
+            "-e", "GATEWAY_BASE_URL=$GatewayBaseUrl",
+            "-e", "TEST_PROFILE=$normalizedTestProfile",
+            "-e", "K6_IDEMPOTENCY_KEY_PREFIX=k6-$normalizedTestProfile-$runId",
+            "k6", "run",
+            "--summary-export", $summaryFileInContainer,
+            "--out", "json=$resultsFileInContainer"
+        )
+
+        if ($K6ThresholdFailureRate -ne "") {
+            $runArgs += @("-e", "K6_THRESHOLD_FAILURE_RATE=$K6ThresholdFailureRate")
+        }
+
+        if ($K6ThresholdP95Duration -ne "") {
+            $runArgs += @("-e", "K6_THRESHOLD_P95_DURATION=$K6ThresholdP95Duration")
+        }
+
+        if ($K6ThresholdChecksRate -ne "") {
+            $runArgs += @("-e", "K6_THRESHOLD_CHECKS_RATE=$K6ThresholdChecksRate")
+        }
+
+        if ($IncludeNotificationCheck) {
+            $runArgs += @("-e", "INCLUDE_NOTIFICATION_CHECK=true")
+        }
+
+        $runArgs += @("/scripts/$K6Script")
+        Invoke-Compose -ComposeArgs $runArgs
+    }
 } catch {
     $k6RunSucceeded = $false
     $k6RunError = $_

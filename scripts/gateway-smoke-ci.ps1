@@ -5,7 +5,9 @@ param(
     [int]$EndpointRetryAttempts = 8,
     [int]$EndpointTimeoutSeconds = 10,
     [string]$SmokeArtifactsDir = "artifacts/smoke",
-    [switch]$SkipFlyway
+    [switch]$SkipFlyway,
+    [switch]$SwarmMode,
+    [string]$StackName = "campusenroll"
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,6 +41,26 @@ function Invoke-Compose {
     & docker compose -f $ComposeFile @ComposeArgs
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose failed: $($ComposeArgs -join ' ')"
+    }
+}
+
+function Write-SwarmArtifact {
+    param(
+        [string]$FileName,
+        [scriptblock]$ContentScript
+    )
+
+    try {
+        New-Item -ItemType Directory -Path $SmokeArtifactsDir -Force | Out-Null
+        $path = Join-Path $SmokeArtifactsDir $FileName
+        $content = & $ContentScript
+        if ($null -eq $content) {
+            $content = ""
+        }
+        $content | Out-String | Set-Content -LiteralPath $path -Encoding UTF8
+        Write-Host "[OK]  Swarm diagnostic artifact written: $path" -ForegroundColor Green
+    } catch {
+        Write-Host "[WARNING] Could not write swarm diagnostic artifact '$FileName': $($_.Exception.Message)" -ForegroundColor Yellow
     }
 }
 
@@ -92,6 +114,34 @@ function Write-SmokeArtifact {
 }
 
 function Write-SmokeDiagnosticsArtifacts {
+    if ($SwarmMode) {
+        Write-SwarmArtifact -FileName "swarm-service-ls.txt" -ContentScript {
+            & docker service ls 2>&1
+        }
+
+        Write-SwarmArtifact -FileName "swarm-stack-services.txt" -ContentScript {
+            & docker stack services $StackName 2>&1
+        }
+
+        Write-SwarmArtifact -FileName "swarm-stack-ps.txt" -ContentScript {
+            & docker stack ps $StackName 2>&1
+        }
+
+        Write-SwarmArtifact -FileName "swarm-gateway-logs.txt" -ContentScript {
+            & docker service logs "${StackName}_api-gateway" --tail 200 2>&1
+        }
+
+        Write-SwarmArtifact -FileName "swarm-enrollment-logs.txt" -ContentScript {
+            & docker service logs "${StackName}_enrollment-service" --tail 200 2>&1
+        }
+
+        Write-SwarmArtifact -FileName "swarm-notification-logs.txt" -ContentScript {
+            & docker service logs "${StackName}_notification-service" --tail 200 2>&1
+        }
+
+        return
+    }
+
     Write-SmokeArtifact -FileName "compose-ps.txt" -ContentScript {
         & docker compose -f $ComposeFile ps 2>&1
     }
@@ -152,6 +202,11 @@ function Write-SmokeDiagnosticsArtifacts {
 }
 
 function Write-ComposeDiagnostics {
+    if ($SwarmMode) {
+        Write-SwarmDiagnostics
+        return
+    }
+
     Write-Host ""
     Write-Host "Diagnostics timestamp: $(Get-Date -Format o)" -ForegroundColor Yellow
     Write-SmokeDiagnosticsArtifacts
@@ -194,6 +249,41 @@ function Write-ComposeDiagnostics {
         Write-Host ""
         Write-Host "Last logs for ${service}:" -ForegroundColor Yellow
         & docker compose -f $ComposeFile logs --tail 80 $service
+    }
+}
+
+function Write-SwarmDiagnostics {
+    Write-Host ""
+    Write-Host "Diagnostics timestamp: $(Get-Date -Format o)" -ForegroundColor Yellow
+    Write-SmokeDiagnosticsArtifacts
+
+    Write-Host ""
+    Write-Host "Docker Swarm nodes:" -ForegroundColor Yellow
+    & docker node ls
+
+    Write-Host ""
+    Write-Host "Docker Swarm services:" -ForegroundColor Yellow
+    & docker service ls
+
+    Write-Host ""
+    Write-Host "Stack services:" -ForegroundColor Yellow
+    & docker stack services $StackName
+
+    Write-Host ""
+    Write-Host "Stack tasks:" -ForegroundColor Yellow
+    & docker stack ps $StackName
+
+    $diagnosticServices = @(
+        "${StackName}_api-gateway",
+        "${StackName}_billing-service",
+        "${StackName}_notification-service",
+        "${StackName}_enrollment-service"
+    )
+
+    foreach ($service in $diagnosticServices) {
+        Write-Host ""
+        Write-Host "Last logs for ${service}:" -ForegroundColor Yellow
+        & docker service logs --tail 80 $service
     }
 }
 
@@ -495,36 +585,41 @@ function Test-PaymentNotificationReadiness {
 Write-Host "CampusEnroll-HA Gateway Smoke Test (CI Mode)" -ForegroundColor Yellow
 Write-Host "Compose file: $ComposeFile"
 Write-Host "Gateway URL:  $GatewayBaseUrl"
+Write-Host "Swarm mode:   $SwarmMode"
 Set-GatewayPortFromBaseUrl -BaseUrl $GatewayBaseUrl
 
-if (-not (Test-Path $ComposeFile)) {
+if (-not $SwarmMode -and -not (Test-Path $ComposeFile)) {
     throw "Compose file not found: $ComposeFile"
 }
 
-Write-Step "Start infrastructure (non-destructive)"
-Invoke-Compose -ComposeArgs @("up", "-d", "campusenroll-postgres", "campusenroll-redis", "campusenroll-rabbitmq")
-Test-InfrastructureReadiness
+if (-not $SwarmMode) {
+    Write-Step "Start infrastructure (non-destructive)"
+    Invoke-Compose -ComposeArgs @("up", "-d", "campusenroll-postgres", "campusenroll-redis", "campusenroll-rabbitmq")
+    Test-InfrastructureReadiness
 
-if (-not $SkipFlyway) {
-    Write-Step "Run Flyway migrations (idempotent)"
-    Invoke-FlywayMigrations
+    if (-not $SkipFlyway) {
+        Write-Step "Run Flyway migrations (idempotent)"
+        Invoke-FlywayMigrations
+    } else {
+        Write-Step "Skipping Flyway because -SkipFlyway was provided"
+    }
+
+    Write-Step "Start full stack (non-destructive)"
+    Invoke-Compose -ComposeArgs @("up", "-d")
+
+    Write-Step "Wait for critical containers to be healthy"
+    Wait-ContainerHealthy -ContainerName "campusenroll-student-service" -MaxAttempts $ContainerWaitAttempts
+    Wait-ContainerHealthy -ContainerName "campusenroll-course-service" -MaxAttempts $ContainerWaitAttempts
+    Wait-ContainerHealthy -ContainerName "campusenroll-billing-service" -MaxAttempts $ContainerWaitAttempts
+    Wait-ContainerHealthy -ContainerName "campusenroll-notification-service" -MaxAttempts $ContainerWaitAttempts
+    Wait-ContainerHealthy -ContainerName "campusenroll-enrollment-service" -MaxAttempts $ContainerWaitAttempts
+
+    Write-Step "Refresh gateway upstream DNS (non-destructive restart)"
+    Invoke-Compose -ComposeArgs @("restart", "campusenroll-api-gateway")
+    Wait-ContainerHealthy -ContainerName "campusenroll-api-gateway" -MaxAttempts $ContainerWaitAttempts
 } else {
-    Write-Step "Skipping Flyway because -SkipFlyway was provided"
+    Write-Step "Swarm mode enabled: skipping docker compose bootstrap and Flyway"
 }
-
-Write-Step "Start full stack (non-destructive)"
-Invoke-Compose -ComposeArgs @("up", "-d")
-
-Write-Step "Wait for critical containers to be healthy"
-Wait-ContainerHealthy -ContainerName "campusenroll-student-service" -MaxAttempts $ContainerWaitAttempts
-Wait-ContainerHealthy -ContainerName "campusenroll-course-service" -MaxAttempts $ContainerWaitAttempts
-Wait-ContainerHealthy -ContainerName "campusenroll-billing-service" -MaxAttempts $ContainerWaitAttempts
-Wait-ContainerHealthy -ContainerName "campusenroll-notification-service" -MaxAttempts $ContainerWaitAttempts
-Wait-ContainerHealthy -ContainerName "campusenroll-enrollment-service" -MaxAttempts $ContainerWaitAttempts
-
-Write-Step "Refresh gateway upstream DNS (non-destructive restart)"
-Invoke-Compose -ComposeArgs @("restart", "campusenroll-api-gateway")
-Wait-ContainerHealthy -ContainerName "campusenroll-api-gateway" -MaxAttempts $ContainerWaitAttempts
 
 Write-Step "Validate gateway health endpoints"
 $healthEndpoints = @(
