@@ -1,0 +1,136 @@
+services:
+  campusenroll-postgres:
+    image: postgres:16
+    container_name: campusenroll-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-campus}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-campus123}
+      POSTGRES_DB: ${DB_NAME:-campusenroll}
+    ports:
+      - "55432:5432"
+    volumes:
+      - campusenroll_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-campus} -d ${DB_NAME:-campusenroll}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - campusenroll-net
+
+  campusenroll-flyway:
+    image: flyway/flyway:10
+    container_name: campusenroll-flyway
+    profiles:
+      - db-migration
+    command:
+      - -url=jdbc:postgresql://${DB_HOST:-campusenroll-postgres}:${DB_PORT:-5432}/${DB_NAME:-campusenroll}
+      - -user=${DB_USER:-campus}
+      - -password=${DB_PASSWORD:-campus123}
+      - -schemas=campusenroll
+      - -connectRetries=30
+      - migrate
+    volumes:
+      - ./database/migrations:/flyway/sql:ro
+    depends_on:
+      campusenroll-postgres:
+        condition: service_healthy
+    networks:
+      - campusenroll-net
+
+  campusenroll-redis:
+    image: redis:7
+    container_name: campusenroll-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - campusenroll-net
+
+  campusenroll-redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: campusenroll-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://campusenroll-redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      campusenroll-redis:
+        condition: service_healthy
+    networks:
+      - campusenroll-net
+
+  campusenroll-rabbitmq:
+    image: rabbitmq:3-management
+    container_name: campusenroll-rabbitmq
+    restart: unless-stopped
+    command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-campus}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-campus123}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - campusenroll-net
+
+  campusenroll-postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: campusenroll-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${DB_USER:-campus}:${DB_PASSWORD:-campus123}@campusenroll-postgres:5432/${DB_NAME:-campusenroll}?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      campusenroll-postgres:
+        condition: service_healthy
+    networks:
+      - campusenroll-net
+
+  campusenroll-prometheus:
+    image: prom/prometheus
+    container_name: campusenroll-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - campusenroll-net
+
+  campusenroll-grafana:
+    image: grafana/grafana
+    container_name: campusenroll-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - campusenroll-net
+
+volumes:
+  campusenroll_pg_data:
+
+networks:
+  campusenroll-net:
+    driver: bridge
+

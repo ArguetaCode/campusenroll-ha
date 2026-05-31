@@ -80,7 +80,7 @@ Resultados esperados del lab:
 - RabbitMQ, Redis, Nginx y Prometheus siguen siendo instancia unica.
 - PostgreSQL HA Lab esta aislado; los microservicios siguen usando la base normal del stack local.
 - No existe separacion read/write para trafico de aplicacion.
-- No hay outbox transaccional ni DLQ formal para eventos de pago/notificacion.
+- No hay outbox transaccional (todavia). DLQ + retries basicos ya existen para eventos de pago/notificacion (ver `docs/rabbitmq-resilience-plan.md`).
 - Las pruebas smoke y k6 crean datos reales de prueba en la base configurada.
 
 ## Riesgos pendientes

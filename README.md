@@ -159,14 +159,14 @@ Objetivo: ejecutar CampusEnroll-HA en varias computadoras dentro de la misma red
 4. Levantar infraestructura:
 
 ```bash
-docker compose up -d campusenroll-postgres campusenroll-redis campusenroll-rabbitmq campusenroll-prometheus campusenroll-grafana
-docker compose --profile db-migration run --rm campusenroll-flyway
+docker compose -f docker-compose.infra.yml up -d
+docker compose -f docker-compose.infra.yml --profile db-migration run --rm campusenroll-flyway
 ```
 
 5. (Opcional) Levantar tambien servicios en A:
 
 ```bash
-docker compose up -d --build billing-service notification-service enrollment-service
+docker compose -f docker-compose.microservices-b.yml up -d --build
 ```
 
 ### Computadora B (ejemplo: student-service)
@@ -246,6 +246,18 @@ curl http://<IP-A>:8085/actuator/health
 
 ```bash
 curl http://<IP-A>:8085/actuator/prometheus
+```
+
+### Gateway Node (LAN) y failover manual
+
+Para laboratorio LAN, la recomendacion es correr el gateway en un host dedicado con `docker-compose.gateway.yml` y un config Nginx generado con upstreams por IP:
+
+```powershell
+Copy-Item .\env\lan-gateway.env.example .\.env
+# Editar *SERVICE_UPSTREAMS con IPs reales
+powershell -ExecutionPolicy Bypass -File .\scripts\gateway-generate-nginx-lan.ps1 -OutputPath .\api-gateway\nginx.lan.generated.conf
+$env:GATEWAY_NGINX_CONF = ".\\api-gateway\\nginx.lan.generated.conf"
+docker compose -f .\docker-compose.gateway.yml up -d
 ```
 
 ## API Gateway local con Nginx

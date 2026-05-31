@@ -44,8 +44,8 @@ On the infra node:
 ```powershell
 Copy-Item .\env\lan-infra.env.example .\.env
 # Edit .env with the node IP and real lab values.
-docker compose up -d campusenroll-postgres campusenroll-redis campusenroll-rabbitmq campusenroll-prometheus campusenroll-grafana
-docker compose --profile db-migration run --rm campusenroll-flyway
+docker compose -f .\docker-compose.infra.yml up -d
+docker compose -f .\docker-compose.infra.yml --profile db-migration run --rm campusenroll-flyway
 ```
 
 ## Microservice Node
@@ -55,7 +55,13 @@ On a node that runs services against central infra:
 ```powershell
 Copy-Item .\env\lan-microservices.env.example .\.env
 # Edit DB_HOST, REDIS_HOST, RABBITMQ_HOST, and service URLs.
-docker compose up -d --build student-service course-service
+docker compose -f .\docker-compose.microservices-a.yml up -d --build
+```
+
+For the other microservice group:
+
+```powershell
+docker compose -f .\docker-compose.microservices-b.yml up -d --build
 ```
 
 Run only the services assigned to the node. Do not start a duplicate service on the same port unless the node has a different host port plan.
@@ -64,14 +70,22 @@ Run only the services assigned to the node. Do not start a duplicate service on 
 
 For local mode, keep `api-gateway/nginx.conf`.
 
-For LAN failover experiments, copy the example and edit upstream IPs:
+For LAN failover experiments, you can either copy the example file and edit upstream IPs, or generate it from `.env` upstream lists.
 
 ```powershell
-Copy-Item .\api-gateway\examples\nginx.lan.example.conf .\api-gateway\nginx.lan.conf
-# Edit nginx.lan.conf with real service node IPs.
+Copy-Item .\env\lan-gateway.env.example .\.env
+# Edit *SERVICE_UPSTREAMS vars with the real service node IPs/ports.
+powershell -ExecutionPolicy Bypass -File .\scripts\gateway-generate-nginx-lan.ps1 -OutputPath .\api-gateway\nginx.lan.generated.conf
 ```
 
-Then temporarily point the Compose bind mount to `nginx.lan.conf` or run Nginx manually with that config. The default compose file remains local-safe and unchanged.
+Then start only the gateway role:
+
+```powershell
+$env:GATEWAY_NGINX_CONF = ".\\api-gateway\\nginx.lan.generated.conf"
+docker compose -f .\docker-compose.gateway.yml up -d
+```
+
+The default `docker-compose.yml` stays local-safe; this workflow is for LAN labs.
 
 ## Manual Service Failover
 
