@@ -1,0 +1,70 @@
+scope: campusenroll-postgres-ha
+namespace: /campusenroll/
+name: patroni-mefi
+
+restapi:
+  listen: 0.0.0.0:8008
+  connect_address: 192.168.0.10:8008
+
+etcd3:
+  hosts: 192.168.0.12:2379,192.168.0.10:2379,192.168.0.11:2379
+
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: 512MB
+        shared_preload_libraries: pg_stat_statements
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+  users:
+    rewind_user:
+      password: rewind123
+      options:
+        - superuser
+  pg_hba:
+    - local all all trust
+    - host all all 127.0.0.1/32 scram-sha-256
+    - host all all 192.168.0.12/32 scram-sha-256
+    - host all all 192.168.0.10/32 scram-sha-256
+    - host all all 192.168.0.11/32 scram-sha-256
+    - host all all 192.168.0.13/32 scram-sha-256
+    - host replication replicator 192.168.0.12/32 scram-sha-256
+    - host replication replicator 192.168.0.10/32 scram-sha-256
+    - host replication replicator 192.168.0.11/32 scram-sha-256
+  post_init: /scripts/bootstrap-app-db.sh
+
+postgresql:
+  listen: 0.0.0.0:5432
+  connect_address: 192.168.0.10:5432
+  data_dir: /var/lib/postgresql/data
+  authentication:
+    superuser:
+      username: postgres
+      password: postgres123
+    replication:
+      username: replicator
+      password: replicator123
+    rewind:
+      username: rewind_user
+      password: rewind123
+  parameters:
+    listen_addresses: "*"
+    password_encryption: scram-sha-256
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false

@@ -1,0 +1,18 @@
+services:
+  campusenroll-postgres-haproxy:
+    image: haproxy:2.9-alpine
+    container_name: campusenroll-postgres-haproxy
+    restart: unless-stopped
+    env_file:
+      - ./env/haproxy.env.example
+    ports:
+      - "${HAPROXY_POSTGRES_PORT:-5000}:5000"
+      - "${HAPROXY_STATS_PORT:-7000}:7000"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    healthcheck:
+      test: ["CMD-SHELL", "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s

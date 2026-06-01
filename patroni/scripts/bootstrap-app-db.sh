@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PGPASSWORD="${PATRONI_SUPERUSER_PASSWORD:-postgres123}"
+APP_DB="${PATRONI_APP_DB:-campusenroll}"
+APP_USER="${PATRONI_APP_USER:-campus}"
+APP_PASSWORD="${PATRONI_APP_PASSWORD:-campus123}"
+
+psql -v ON_ERROR_STOP=1 -U postgres -d postgres <<SQL
+DO
+\$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${APP_USER}') THEN
+    CREATE ROLE ${APP_USER} LOGIN PASSWORD '${APP_PASSWORD}';
+  ELSE
+    ALTER ROLE ${APP_USER} WITH LOGIN PASSWORD '${APP_PASSWORD}';
+  END IF;
+END
+\$\$;
+
+SELECT 'CREATE DATABASE ${APP_DB} OWNER ${APP_USER}'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '${APP_DB}')
+\gexec
+SQL

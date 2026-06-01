@@ -1,0 +1,125 @@
+services:
+  etcd-jared:
+    image: quay.io/coreos/etcd:v3.5.16
+    container_name: etcd-jared
+    restart: unless-stopped
+    profiles: ["jared"]
+    network_mode: host
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd-jared
+      - --data-dir=/etcd-data
+      - --initial-advertise-peer-urls=http://192.168.0.12:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --advertise-client-urls=http://192.168.0.12:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-cluster=etcd-jared=http://192.168.0.12:2380,etcd-mefi=http://192.168.0.10:2380,etcd-brayan=http://192.168.0.11:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=campusenroll-patroni-etcd
+      - --enable-v2=false
+    volumes:
+      - etcd_jared_data:/etcd-data
+
+  etcd-mefi:
+    image: quay.io/coreos/etcd:v3.5.16
+    container_name: etcd-mefi
+    restart: unless-stopped
+    profiles: ["mefi"]
+    network_mode: host
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd-mefi
+      - --data-dir=/etcd-data
+      - --initial-advertise-peer-urls=http://192.168.0.10:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --advertise-client-urls=http://192.168.0.10:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-cluster=etcd-jared=http://192.168.0.12:2380,etcd-mefi=http://192.168.0.10:2380,etcd-brayan=http://192.168.0.11:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=campusenroll-patroni-etcd
+      - --enable-v2=false
+    volumes:
+      - etcd_mefi_data:/etcd-data
+
+  etcd-brayan:
+    image: quay.io/coreos/etcd:v3.5.16
+    container_name: etcd-brayan
+    restart: unless-stopped
+    profiles: ["brayan"]
+    network_mode: host
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd-brayan
+      - --data-dir=/etcd-data
+      - --initial-advertise-peer-urls=http://192.168.0.11:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --advertise-client-urls=http://192.168.0.11:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-cluster=etcd-jared=http://192.168.0.12:2380,etcd-mefi=http://192.168.0.10:2380,etcd-brayan=http://192.168.0.11:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=campusenroll-patroni-etcd
+      - --enable-v2=false
+    volumes:
+      - etcd_brayan_data:/etcd-data
+
+  patroni-jared:
+    image: ghcr.io/zalando/patroni:latest
+    container_name: patroni-jared
+    restart: unless-stopped
+    profiles: ["jared"]
+    network_mode: host
+    env_file:
+      - ./env/patroni-jared.env.example
+    command: ["patroni", "/config/patroni.yml"]
+    volumes:
+      - ./patroni/jared/patroni.yml:/config/patroni.yml:ro
+      - ./patroni/scripts:/scripts:ro
+      - patroni_jared_data:/var/lib/postgresql/data
+    depends_on:
+      - etcd-jared
+
+  patroni-mefi:
+    image: ghcr.io/zalando/patroni:latest
+    container_name: patroni-mefi
+    restart: unless-stopped
+    profiles: ["mefi"]
+    network_mode: host
+    env_file:
+      - ./env/patroni-mefi.env.example
+    command: ["patroni", "/config/patroni.yml"]
+    volumes:
+      - ./patroni/mefi/patroni.yml:/config/patroni.yml:ro
+      - ./patroni/scripts:/scripts:ro
+      - patroni_mefi_data:/var/lib/postgresql/data
+    depends_on:
+      - etcd-mefi
+
+  patroni-brayan:
+    image: ghcr.io/zalando/patroni:latest
+    container_name: patroni-brayan
+    restart: unless-stopped
+    profiles: ["brayan"]
+    network_mode: host
+    env_file:
+      - ./env/patroni-brayan.env.example
+    command: ["patroni", "/config/patroni.yml"]
+    volumes:
+      - ./patroni/brayan/patroni.yml:/config/patroni.yml:ro
+      - ./patroni/scripts:/scripts:ro
+      - patroni_brayan_data:/var/lib/postgresql/data
+    depends_on:
+      - etcd-brayan
+
+volumes:
+  etcd_jared_data:
+    name: campusenroll_etcd_jared_data
+  etcd_mefi_data:
+    name: campusenroll_etcd_mefi_data
+  etcd_brayan_data:
+    name: campusenroll_etcd_brayan_data
+  patroni_jared_data:
+    name: campusenroll_patroni_jared_data
+  patroni_mefi_data:
+    name: campusenroll_patroni_mefi_data
+  patroni_brayan_data:
+    name: campusenroll_patroni_brayan_data
