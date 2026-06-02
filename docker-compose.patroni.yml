@@ -63,7 +63,11 @@ services:
       - etcd_brayan_data:/etcd-data
 
   patroni-jared:
-    image: ghcr.io/zalando/patroni:latest
+    build:
+      context: .
+      dockerfile: patroni/Dockerfile
+    image: campusenroll/patroni-postgres:16
+    pull_policy: build
     container_name: patroni-jared
     restart: unless-stopped
     profiles: ["jared"]
@@ -79,7 +83,11 @@ services:
       - etcd-jared
 
   patroni-mefi:
-    image: ghcr.io/zalando/patroni:latest
+    build:
+      context: .
+      dockerfile: patroni/Dockerfile
+    image: campusenroll/patroni-postgres:16
+    pull_policy: build
     container_name: patroni-mefi
     restart: unless-stopped
     profiles: ["mefi"]
@@ -95,7 +103,11 @@ services:
       - etcd-mefi
 
   patroni-brayan:
-    image: ghcr.io/zalando/patroni:latest
+    build:
+      context: .
+      dockerfile: patroni/Dockerfile
+    image: campusenroll/patroni-postgres:16
+    pull_policy: build
     container_name: patroni-brayan
     restart: unless-stopped
     profiles: ["brayan"]

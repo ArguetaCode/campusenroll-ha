@@ -1,0 +1,3 @@
+patroni[etcd3]
+psycopg[binary]
+psycopg2-binary
