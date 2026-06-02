@@ -1,0 +1,90 @@
+services:
+  rabbitmq-jared:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq-jared
+    hostname: rabbitmq-jared
+    restart: unless-stopped
+    profiles: ["jared"]
+    network_mode: host
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-jared
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-campusenroll-rabbitmq-ha-cookie}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-campus}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-campus123}
+    command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"]
+    extra_hosts:
+      - "rabbitmq-mefi:192.168.0.10"
+      - "rabbitmq-brayan:192.168.0.11"
+      - "rabbitmq-jared:192.168.0.12"
+    volumes:
+      - ./rabbitmq/rabbitmq-ha.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq_jared_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  rabbitmq-mefi:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq-mefi
+    hostname: rabbitmq-mefi
+    restart: unless-stopped
+    profiles: ["mefi"]
+    network_mode: host
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-mefi
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-campusenroll-rabbitmq-ha-cookie}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-campus}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-campus123}
+    command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"]
+    extra_hosts:
+      - "rabbitmq-mefi:192.168.0.10"
+      - "rabbitmq-brayan:192.168.0.11"
+      - "rabbitmq-jared:192.168.0.12"
+    volumes:
+      - ./rabbitmq/rabbitmq-ha.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq_mefi_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  rabbitmq-brayan:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq-brayan
+    hostname: rabbitmq-brayan
+    restart: unless-stopped
+    profiles: ["brayan"]
+    network_mode: host
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-brayan
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-campusenroll-rabbitmq-ha-cookie}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-campus}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-campus123}
+    command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"]
+    extra_hosts:
+      - "rabbitmq-mefi:192.168.0.10"
+      - "rabbitmq-brayan:192.168.0.11"
+      - "rabbitmq-jared:192.168.0.12"
+    volumes:
+      - ./rabbitmq/rabbitmq-ha.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq_brayan_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  rabbitmq_jared_data:
+    name: campusenroll_rabbitmq_jared_data
+  rabbitmq_mefi_data:
+    name: campusenroll_rabbitmq_mefi_data
+  rabbitmq_brayan_data:
+    name: campusenroll_rabbitmq_brayan_data
+

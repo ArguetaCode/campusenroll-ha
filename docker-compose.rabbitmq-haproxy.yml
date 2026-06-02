@@ -1,0 +1,9 @@
+services:
+  campusenroll-rabbitmq-haproxy:
+    image: haproxy:2.9-alpine
+    container_name: campusenroll-rabbitmq-haproxy
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./haproxy/rabbitmq-ha.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+
