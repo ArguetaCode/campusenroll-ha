@@ -1,0 +1,184 @@
+x-redis-lan-hosts: &redis_lan_hosts
+  - "redis-jared:192.168.0.12"
+  - "redis-mefi:192.168.0.10"
+  - "redis-brayan:192.168.0.11"
+
+services:
+  redis-jared:
+    image: redis:7-alpine
+    container_name: redis-jared
+    hostname: redis-jared
+    restart: unless-stopped
+    profiles: ["jared"]
+    network_mode: host
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /data/redis.conf ]; then
+          cp /etc/redis/redis.conf /data/redis.conf
+        fi
+        redis-server /data/redis.conf
+    extra_hosts: *redis_lan_hosts
+    volumes:
+      - ./redis/redis-jared.conf:/etc/redis/redis.conf:ro
+      - redis_jared_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  redis-sentinel-jared:
+    image: redis:7-alpine
+    container_name: redis-sentinel-jared
+    hostname: redis-sentinel-jared
+    restart: unless-stopped
+    profiles: ["jared"]
+    network_mode: host
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /data/sentinel.conf ]; then
+          cp /etc/redis/sentinel.conf /data/sentinel.conf
+        fi
+        redis-server /data/sentinel.conf --sentinel
+    extra_hosts: *redis_lan_hosts
+    volumes:
+      - ./redis/sentinel-jared.conf:/etc/redis/sentinel.conf:ro
+      - redis_sentinel_jared_data:/data
+    depends_on:
+      redis-jared:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "26379", "SENTINEL", "master", "campusenroll-redis"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  redis-mefi:
+    image: redis:7-alpine
+    container_name: redis-mefi
+    hostname: redis-mefi
+    restart: unless-stopped
+    profiles: ["mefi"]
+    network_mode: host
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /data/redis.conf ]; then
+          cp /etc/redis/redis.conf /data/redis.conf
+        fi
+        redis-server /data/redis.conf
+    extra_hosts: *redis_lan_hosts
+    volumes:
+      - ./redis/redis-mefi.conf:/etc/redis/redis.conf:ro
+      - redis_mefi_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  redis-sentinel-mefi:
+    image: redis:7-alpine
+    container_name: redis-sentinel-mefi
+    hostname: redis-sentinel-mefi
+    restart: unless-stopped
+    profiles: ["mefi"]
+    network_mode: host
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /data/sentinel.conf ]; then
+          cp /etc/redis/sentinel.conf /data/sentinel.conf
+        fi
+        redis-server /data/sentinel.conf --sentinel
+    extra_hosts: *redis_lan_hosts
+    volumes:
+      - ./redis/sentinel-mefi.conf:/etc/redis/sentinel.conf:ro
+      - redis_sentinel_mefi_data:/data
+    depends_on:
+      redis-mefi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "26379", "SENTINEL", "master", "campusenroll-redis"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  redis-brayan:
+    image: redis:7-alpine
+    container_name: redis-brayan
+    hostname: redis-brayan
+    restart: unless-stopped
+    profiles: ["brayan"]
+    network_mode: host
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /data/redis.conf ]; then
+          cp /etc/redis/redis.conf /data/redis.conf
+        fi
+        redis-server /data/redis.conf
+    extra_hosts: *redis_lan_hosts
+    volumes:
+      - ./redis/redis-brayan.conf:/etc/redis/redis.conf:ro
+      - redis_brayan_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  redis-sentinel-brayan:
+    image: redis:7-alpine
+    container_name: redis-sentinel-brayan
+    hostname: redis-sentinel-brayan
+    restart: unless-stopped
+    profiles: ["brayan"]
+    network_mode: host
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /data/sentinel.conf ]; then
+          cp /etc/redis/sentinel.conf /data/sentinel.conf
+        fi
+        redis-server /data/sentinel.conf --sentinel
+    extra_hosts: *redis_lan_hosts
+    volumes:
+      - ./redis/sentinel-brayan.conf:/etc/redis/sentinel.conf:ro
+      - redis_sentinel_brayan_data:/data
+    depends_on:
+      redis-brayan:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "26379", "SENTINEL", "master", "campusenroll-redis"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+volumes:
+  redis_jared_data:
+    name: campusenroll_redis_jared_data
+  redis_mefi_data:
+    name: campusenroll_redis_mefi_data
+  redis_brayan_data:
+    name: campusenroll_redis_brayan_data
+  redis_sentinel_jared_data:
+    name: campusenroll_redis_sentinel_jared_data
+  redis_sentinel_mefi_data:
+    name: campusenroll_redis_sentinel_mefi_data
+  redis_sentinel_brayan_data:
+    name: campusenroll_redis_sentinel_brayan_data
