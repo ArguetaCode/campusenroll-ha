@@ -35,7 +35,7 @@ services:
       - --advertise-client-urls=http://192.168.0.10:2379
       - --listen-client-urls=http://0.0.0.0:2379
       - --initial-cluster=etcd-jared=http://192.168.0.12:2380,etcd-mefi=http://192.168.0.10:2380,etcd-brayan=http://192.168.0.11:2380
-      - --initial-cluster-state=new
+      - --initial-cluster-state=existing
       - --initial-cluster-token=campusenroll-patroni-etcd
       - --enable-v2=false
     volumes:
@@ -56,7 +56,7 @@ services:
       - --advertise-client-urls=http://192.168.0.11:2379
       - --listen-client-urls=http://0.0.0.0:2379
       - --initial-cluster=etcd-jared=http://192.168.0.12:2380,etcd-mefi=http://192.168.0.10:2380,etcd-brayan=http://192.168.0.11:2380
-      - --initial-cluster-state=new
+      - --initial-cluster-state=existing
       - --initial-cluster-token=campusenroll-patroni-etcd
       - --enable-v2=false
     volumes:
