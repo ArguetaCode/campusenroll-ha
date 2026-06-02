@@ -1,3 +1,8 @@
+x-rabbitmq-lan-hosts: &rabbitmq_lan_hosts
+  - "rabbitmq-jared:192.168.0.12"
+  - "rabbitmq-mefi:192.168.0.10"
+  - "rabbitmq-brayan:192.168.0.11"
+
 services:
   rabbitmq-jared:
     image: rabbitmq:3.13-management
@@ -8,14 +13,13 @@ services:
     network_mode: host
     environment:
       RABBITMQ_NODENAME: rabbit@rabbitmq-jared
+      RABBITMQ_USE_LONGNAME: "false"
+      RABBITMQ_DIST_PORT: 25672
       RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-campusenroll-rabbitmq-ha-cookie}
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-campus}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-campus123}
     command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"]
-    extra_hosts:
-      - "rabbitmq-mefi:192.168.0.10"
-      - "rabbitmq-brayan:192.168.0.11"
-      - "rabbitmq-jared:192.168.0.12"
+    extra_hosts: *rabbitmq_lan_hosts
     volumes:
       - ./rabbitmq/rabbitmq-ha.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - rabbitmq_jared_data:/var/lib/rabbitmq
@@ -35,14 +39,13 @@ services:
     network_mode: host
     environment:
       RABBITMQ_NODENAME: rabbit@rabbitmq-mefi
+      RABBITMQ_USE_LONGNAME: "false"
+      RABBITMQ_DIST_PORT: 25672
       RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-campusenroll-rabbitmq-ha-cookie}
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-campus}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-campus123}
     command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"]
-    extra_hosts:
-      - "rabbitmq-mefi:192.168.0.10"
-      - "rabbitmq-brayan:192.168.0.11"
-      - "rabbitmq-jared:192.168.0.12"
+    extra_hosts: *rabbitmq_lan_hosts
     volumes:
       - ./rabbitmq/rabbitmq-ha.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - rabbitmq_mefi_data:/var/lib/rabbitmq
@@ -62,14 +65,13 @@ services:
     network_mode: host
     environment:
       RABBITMQ_NODENAME: rabbit@rabbitmq-brayan
+      RABBITMQ_USE_LONGNAME: "false"
+      RABBITMQ_DIST_PORT: 25672
       RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-campusenroll-rabbitmq-ha-cookie}
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-campus}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-campus123}
     command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"]
-    extra_hosts:
-      - "rabbitmq-mefi:192.168.0.10"
-      - "rabbitmq-brayan:192.168.0.11"
-      - "rabbitmq-jared:192.168.0.12"
+    extra_hosts: *rabbitmq_lan_hosts
     volumes:
       - ./rabbitmq/rabbitmq-ha.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - rabbitmq_brayan_data:/var/lib/rabbitmq
@@ -87,4 +89,3 @@ volumes:
     name: campusenroll_rabbitmq_mefi_data
   rabbitmq_brayan_data:
     name: campusenroll_rabbitmq_brayan_data
-

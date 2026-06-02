@@ -44,6 +44,9 @@ La configuracion usa:
 - Usuario: `campus`
 - Password: `campus123`
 - Cookie Erlang compartida: `campusenroll-rabbitmq-ha-cookie`
+- Nombres Erlang cortos: `rabbit@rabbitmq-jared`, `rabbit@rabbitmq-mefi`, `rabbit@rabbitmq-brayan`
+- Resolucion LAN por `/etc/hosts` en cada PC y `extra_hosts` dentro de cada contenedor
+- Puerto fijo de distribucion Erlang: `25672`
 - `cluster_partition_handling = pause_minority`
 - `default_queue_type = quorum`
 
@@ -51,11 +54,30 @@ Con `default_queue_type = quorum`, las colas nuevas declaradas por Spring como d
 
 ## Preparacion
 
-Ejecutar en las 3 PCs RabbitMQ:
+Ejecutar en las 3 PCs RabbitMQ. Esto corrige la resolucion desde el host Linux y tambien ayuda a validar conectividad antes de tocar RabbitMQ:
+
+```bash
+sudo cp /etc/hosts /etc/hosts.campusenroll-rabbitmq-ha.bak.$(date +%Y%m%d%H%M%S)
+sudo sed -i '/rabbitmq-jared/d;/rabbitmq-mefi/d;/rabbitmq-brayan/d' /etc/hosts
+cat <<'EOF' | sudo tee -a /etc/hosts
+192.168.0.12 rabbitmq-jared
+192.168.0.10 rabbitmq-mefi
+192.168.0.11 rabbitmq-brayan
+EOF
+
+getent hosts rabbitmq-jared rabbitmq-mefi rabbitmq-brayan
+ping -c 2 rabbitmq-jared
+ping -c 2 rabbitmq-mefi
+ping -c 2 rabbitmq-brayan
+```
+
+Validar el compose en cada PC con el perfil del nodo que corresponde:
 
 ```bash
 cd /home/arguetacode/Acadex/campusenroll-ha
-docker compose -f docker-compose.rabbitmq-ha.yml config --quiet
+docker compose --profile jared -f docker-compose.rabbitmq-ha.yml config --quiet
+docker compose --profile mefi -f docker-compose.rabbitmq-ha.yml config --quiet
+docker compose --profile brayan -f docker-compose.rabbitmq-ha.yml config --quiet
 ```
 
 Ejecutar en PC Extra:
@@ -121,12 +143,48 @@ cd /home/arguetacode/Acadex/campusenroll-ha
 docker compose -f docker-compose.rabbitmq-haproxy.yml up -d campusenroll-rabbitmq-haproxy
 ```
 
+## Unir nodos al cluster
+
+Si los tres nodos ya arrancaron como nodos individuales, corregir `/etc/hosts` no los une automaticamente. Mantener Jared como nodo semilla y reinicializar solo la metadata RabbitMQ de Mefi y Brayan para que se unan a `rabbit@rabbitmq-jared`.
+
+### Jared `192.168.0.12`
+
+```bash
+docker exec rabbitmq-jared rabbitmq-diagnostics -q ping
+docker exec rabbitmq-jared rabbitmqctl cluster_status
+```
+
+### Mefi `192.168.0.10`
+
+```bash
+docker exec rabbitmq-mefi rabbitmq-diagnostics -q ping
+docker exec rabbitmq-mefi rabbitmqctl stop_app
+docker exec rabbitmq-mefi rabbitmqctl reset
+docker exec rabbitmq-mefi rabbitmqctl join_cluster rabbit@rabbitmq-jared
+docker exec rabbitmq-mefi rabbitmqctl start_app
+docker exec rabbitmq-mefi rabbitmqctl cluster_status
+```
+
+### Brayan `192.168.0.11`
+
+```bash
+docker exec rabbitmq-brayan rabbitmq-diagnostics -q ping
+docker exec rabbitmq-brayan rabbitmqctl stop_app
+docker exec rabbitmq-brayan rabbitmqctl reset
+docker exec rabbitmq-brayan rabbitmqctl join_cluster rabbit@rabbitmq-jared
+docker exec rabbitmq-brayan rabbitmqctl start_app
+docker exec rabbitmq-brayan rabbitmqctl cluster_status
+```
+
 ## Verificar cluster
 
 Desde cualquier nodo RabbitMQ, por ejemplo Brayan:
 
 ```bash
 docker exec rabbitmq-brayan rabbitmq-diagnostics -q ping
+docker exec rabbitmq-brayan rabbitmq-diagnostics -q resolve_hostname rabbitmq-jared
+docker exec rabbitmq-brayan rabbitmq-diagnostics -q resolve_hostname rabbitmq-mefi
+docker exec rabbitmq-brayan rabbitmq-diagnostics -q resolve_hostname rabbitmq-brayan
 docker exec rabbitmq-brayan rabbitmqctl cluster_status
 docker exec rabbitmq-brayan rabbitmqctl list_users
 ```
@@ -248,4 +306,3 @@ docker exec rabbitmq-mefi rabbitmqctl cluster_status
 - No se implementa Docker Swarm en esta fase.
 - No se modifica Patroni, etcd ni PostgreSQL.
 - No se agrega Outbox Pattern; si RabbitMQ cae exactamente despues de persistir pago y antes de publicar evento, esa garantia transaccional sigue pendiente.
-
