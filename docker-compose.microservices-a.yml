@@ -7,12 +7,12 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: ${STUDENT_SERVER_PORT:-8081}
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
+      DB_HOST: ${DB_HOST:-192.168.0.13}
+      DB_PORT: ${DB_PORT:-5000}
       DB_NAME: ${DB_NAME:-campusenroll}
       DB_USER: ${DB_USER:-campus}
       DB_PASSWORD: ${DB_PASSWORD:-campus123}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST}:${DB_PORT:-5432}/${DB_NAME:-campusenroll}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST:-192.168.0.13}:${DB_PORT:-5000}/${DB_NAME:-campusenroll}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-campus}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-campus123}
     ports:
@@ -34,12 +34,12 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: ${COURSE_SERVER_PORT:-8082}
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
+      DB_HOST: ${DB_HOST:-192.168.0.13}
+      DB_PORT: ${DB_PORT:-5000}
       DB_NAME: ${DB_NAME:-campusenroll}
       DB_USER: ${DB_USER:-campus}
       DB_PASSWORD: ${DB_PASSWORD:-campus123}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST}:${DB_PORT:-5432}/${DB_NAME:-campusenroll}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST:-192.168.0.13}:${DB_PORT:-5000}/${DB_NAME:-campusenroll}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-campus}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-campus123}
     ports:
@@ -56,4 +56,3 @@ services:
 networks:
   campusenroll-net:
     driver: bridge
-

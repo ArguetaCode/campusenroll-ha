@@ -7,12 +7,12 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: ${BILLING_SERVER_PORT:-8083}
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
+      DB_HOST: ${DB_HOST:-192.168.0.13}
+      DB_PORT: ${DB_PORT:-5000}
       DB_NAME: ${DB_NAME:-campusenroll}
       DB_USER: ${DB_USER:-campus}
       DB_PASSWORD: ${DB_PASSWORD:-campus123}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST}:${DB_PORT:-5432}/${DB_NAME:-campusenroll}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST:-192.168.0.13}:${DB_PORT:-5000}/${DB_NAME:-campusenroll}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-campus}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-campus123}
       RABBITMQ_HOST: ${RABBITMQ_HOST}
@@ -23,6 +23,10 @@ services:
       SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-campus}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-campus123}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      SPRING_REDIS_HOST: ${REDIS_HOST}
+      SPRING_REDIS_PORT: ${REDIS_PORT:-6379}
     ports:
       - "8083:8083"
     healthcheck:
@@ -42,12 +46,12 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: ${NOTIFICATION_SERVER_PORT:-8084}
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
+      DB_HOST: ${DB_HOST:-192.168.0.13}
+      DB_PORT: ${DB_PORT:-5000}
       DB_NAME: ${DB_NAME:-campusenroll}
       DB_USER: ${DB_USER:-campus}
       DB_PASSWORD: ${DB_PASSWORD:-campus123}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST}:${DB_PORT:-5432}/${DB_NAME:-campusenroll}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST:-192.168.0.13}:${DB_PORT:-5000}/${DB_NAME:-campusenroll}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-campus}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-campus123}
       RABBITMQ_HOST: ${RABBITMQ_HOST}
@@ -81,12 +85,12 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: ${ENROLLMENT_SERVER_PORT:-8085}
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
+      DB_HOST: ${DB_HOST:-192.168.0.13}
+      DB_PORT: ${DB_PORT:-5000}
       DB_NAME: ${DB_NAME:-campusenroll}
       DB_USER: ${DB_USER:-campus}
       DB_PASSWORD: ${DB_PASSWORD:-campus123}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST}:${DB_PORT:-5432}/${DB_NAME:-campusenroll}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST:-192.168.0.13}:${DB_PORT:-5000}/${DB_NAME:-campusenroll}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-campus}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-campus123}
       RABBITMQ_HOST: ${RABBITMQ_HOST}
@@ -97,10 +101,10 @@ services:
       SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-campus}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-campus123}
-      STUDENT_SERVICE_URL: ${STUDENT_SERVICE_URL}
-      COURSE_SERVICE_URL: ${COURSE_SERVICE_URL}
-      BILLING_SERVICE_URL: ${BILLING_SERVICE_URL}
-      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL}
+      STUDENT_SERVICE_URL: ${STUDENT_SERVICE_URL:-http://student-service:8081}
+      COURSE_SERVICE_URL: ${COURSE_SERVICE_URL:-http://course-service:8082}
+      BILLING_SERVICE_URL: ${BILLING_SERVICE_URL:-http://billing-service:8083}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:8084}
     ports:
       - "8085:8085"
     healthcheck:
@@ -115,4 +119,3 @@ services:
 networks:
   campusenroll-net:
     driver: bridge
-
